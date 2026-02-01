@@ -79,7 +79,7 @@ on:
 
 jobs:
   build-arm:
-    uses: ./.github/workflows/build-arm-image/workflow.yml
+    uses: ./.github/workflows/build-arm-image.yml
     with:
       image_name: ${{ inputs.image_name }}
       dockerfile_path: ${{ inputs.arm_dockerfile_path != '' && inputs.arm_dockerfile_path || inputs.dockerfile_path }}
@@ -92,7 +92,7 @@ jobs:
       registry_password: ${{ secrets.registry_password }}
 
   build-amd:
-    uses: ./.github/workflows/build-amd-image/workflow.yml
+    uses: ./.github/workflows/build-amd-image.yml
     with:
       image_name: ${{ inputs.image_name }}
       dockerfile_path: ${{ inputs.amd_dockerfile_path != '' && inputs.amd_dockerfile_path || inputs.dockerfile_path }}
