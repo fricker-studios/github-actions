@@ -48,6 +48,8 @@ jobs:
 
 ## Workflow Inputs
 
+### Common Inputs (All Workflows)
+
 All three workflows share the following common inputs:
 
 | Input | Description | Required | Default |
@@ -58,6 +60,21 @@ All three workflows share the following common inputs:
 | `build_args` | Build arguments (comma-separated KEY=VALUE pairs) | No | `''` |
 | `push` | Whether to push the image to registry | No | `false` |
 | `tags` | Additional tags for the image (newline-separated) | No | `''` |
+
+### Architecture-Specific Inputs (Multiarch Workflow Only)
+
+The multiarch workflow supports optional architecture-specific parameters that override the common parameters for each architecture:
+
+| Input | Description | Required | Default |
+|-------|-------------|----------|---------|
+| `arm_dockerfile_path` | Path to the Dockerfile for ARM build (overrides `dockerfile_path`) | No | `''` |
+| `arm_context` | Build context path for ARM build (overrides `context`) | No | `''` |
+| `arm_build_args` | Build arguments for ARM build (overrides `build_args`) | No | `''` |
+| `amd_dockerfile_path` | Path to the Dockerfile for AMD build (overrides `dockerfile_path`) | No | `''` |
+| `amd_context` | Build context path for AMD build (overrides `context`) | No | `''` |
+| `amd_build_args` | Build arguments for AMD build (overrides `build_args`) | No | `''` |
+
+**Note**: If architecture-specific parameters are not provided (empty string), the workflow will use the common parameters (`dockerfile_path`, `context`, `build_args`) for both architectures.
 
 ## Workflow Secrets
 
@@ -150,7 +167,48 @@ jobs:
 
 Note: The multiarch workflow automatically builds for both AMD64 and ARM64 architectures using separate self-hosted runners in parallel.
 
-### Example 4: Build All Architectures in Parallel (Manual Control)
+### Example 4: Build Multiarch Image with Architecture-Specific Dockerfiles
+
+If you need different Dockerfiles or build contexts for ARM and AMD:
+
+```yaml
+name: Build Multiarch Image with Different Dockerfiles
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  build-multiarch:
+    uses: fricker-studios/github-actions/.github/workflows/build-multiarch-image.yml@main
+    with:
+      image_name: myorg/myapp
+      # Common parameters (used if architecture-specific ones aren't provided)
+      dockerfile_path: ./Dockerfile
+      context: .
+      # ARM-specific overrides
+      arm_dockerfile_path: ./Dockerfile.arm64
+      arm_context: ./arm
+      arm_build_args: ARCH=arm64,OPTIMIZATION=neon
+      # AMD-specific overrides
+      amd_dockerfile_path: ./Dockerfile.amd64
+      amd_context: ./amd
+      amd_build_args: ARCH=amd64,OPTIMIZATION=avx2
+      push: true
+      tags: |
+        latest
+        v1.0.0
+    secrets:
+      registry_username: ${{ secrets.DOCKER_USERNAME }}
+      registry_password: ${{ secrets.DOCKER_PASSWORD }}
+```
+
+This allows you to optimize each architecture build separately, for example:
+- Using architecture-specific optimizations in build arguments
+- Different Dockerfiles that install architecture-specific dependencies
+- Separate build contexts with architecture-specific files
+
+### Example 5: Build All Architectures in Parallel (Manual Control)
 
 If you need to manually control individual architecture builds:
 
@@ -183,7 +241,7 @@ jobs:
       registry_password: ${{ secrets.DOCKER_PASSWORD }}
 ```
 
-### Example 5: Using Workflow Outputs
+### Example 6: Using Workflow Outputs
 
 ```yaml
 name: Build and Deploy
@@ -214,7 +272,7 @@ jobs:
           # Add your deployment commands here
 ```
 
-### Example 6: Building from a Subdirectory
+### Example 7: Building from a Subdirectory
 
 ```yaml
 name: Build from Subdirectory
