@@ -107,6 +107,10 @@ jobs:
         id: manifest
         if: inputs.push == true
         run: |
+          echo "Using ARM image: ${{ needs.build-arm.outputs.image_tag }}"
+          echo "Using AMD image: ${{ needs.build-amd.outputs.image_tag }}"
+          echo ""
+
           # Create list of all tags to manifest
           TAGS=("${{ inputs.image_name }}:${{ github.sha }}")
           if [ -n "${{ inputs.tags }}" ]; then
