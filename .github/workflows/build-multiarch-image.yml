@@ -56,7 +56,7 @@ jobs:
   build-multiarch:
     runs-on: ubuntu-latest
     outputs:
-      image_tag: ${{ steps.build.outputs.image_tag }}
+      image_tag: ${{ steps.output.outputs.image_tag }}
       digest: ${{ steps.build.outputs.digest }}
 
     steps:
