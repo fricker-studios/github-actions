@@ -8,17 +8,47 @@ on:
         required: true
         type: string
       dockerfile_path:
-        description: 'Path to the Dockerfile'
+        description: 'Path to the Dockerfile (used for both architectures unless overridden)'
         required: false
         type: string
         default: './Dockerfile'
       context:
-        description: 'Build context path'
+        description: 'Build context path (used for both architectures unless overridden)'
         required: false
         type: string
         default: '.'
       build_args:
-        description: 'Build arguments (comma-separated KEY=VALUE pairs)'
+        description: 'Build arguments (comma-separated KEY=VALUE pairs, used for both architectures unless overridden)'
+        required: false
+        type: string
+        default: ''
+      arm_dockerfile_path:
+        description: 'Path to the Dockerfile for ARM build (overrides dockerfile_path for ARM)'
+        required: false
+        type: string
+        default: ''
+      arm_context:
+        description: 'Build context path for ARM build (overrides context for ARM)'
+        required: false
+        type: string
+        default: ''
+      arm_build_args:
+        description: 'Build arguments for ARM build (overrides build_args for ARM)'
+        required: false
+        type: string
+        default: ''
+      amd_dockerfile_path:
+        description: 'Path to the Dockerfile for AMD build (overrides dockerfile_path for AMD)'
+        required: false
+        type: string
+        default: ''
+      amd_context:
+        description: 'Build context path for AMD build (overrides context for AMD)'
+        required: false
+        type: string
+        default: ''
+      amd_build_args:
+        description: 'Build arguments for AMD build (overrides build_args for AMD)'
         required: false
         type: string
         default: ''
@@ -52,9 +82,9 @@ jobs:
     uses: ./.github/workflows/build-arm-image.yml
     with:
       image_name: ${{ inputs.image_name }}
-      dockerfile_path: ${{ inputs.dockerfile_path }}
-      context: ${{ inputs.context }}
-      build_args: ${{ inputs.build_args }}
+      dockerfile_path: ${{ inputs.arm_dockerfile_path != '' && inputs.arm_dockerfile_path || inputs.dockerfile_path }}
+      context: ${{ inputs.arm_context != '' && inputs.arm_context || inputs.context }}
+      build_args: ${{ inputs.arm_build_args != '' && inputs.arm_build_args || inputs.build_args }}
       push: ${{ inputs.push }}
       tags: ${{ inputs.tags }}
     secrets:
@@ -65,9 +95,9 @@ jobs:
     uses: ./.github/workflows/build-amd-image.yml
     with:
       image_name: ${{ inputs.image_name }}
-      dockerfile_path: ${{ inputs.dockerfile_path }}
-      context: ${{ inputs.context }}
-      build_args: ${{ inputs.build_args }}
+      dockerfile_path: ${{ inputs.amd_dockerfile_path != '' && inputs.amd_dockerfile_path || inputs.dockerfile_path }}
+      context: ${{ inputs.amd_context != '' && inputs.amd_context || inputs.context }}
+      build_args: ${{ inputs.amd_build_args != '' && inputs.amd_build_args || inputs.build_args }}
       push: ${{ inputs.push }}
       tags: ${{ inputs.tags }}
     secrets:
