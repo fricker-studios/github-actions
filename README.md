@@ -4,13 +4,13 @@ This repository contains reusable GitHub Actions workflows for building Docker i
 
 ## Available Workflows
 
-### 1. Build ARM Image (`build-arm-image.yml`)
+### 1. Build ARM Image (`build-arm-image/workflow.yml`)
 Builds a Docker image specifically for ARM64 architecture (linux/arm64) on self-hosted ARM64 runners.
 
-### 2. Build AMD Image (`build-amd-image.yml`)
+### 2. Build AMD Image (`build-amd-image/workflow.yml`)
 Builds a Docker image specifically for AMD64 architecture (linux/amd64) on self-hosted X64 runners.
 
-### 3. Build Multiarch Image (`build-multiarch-image.yml`)
+### 3. Build Multiarch Image (`build-multiarch-image/workflow.yml`)
 Builds ARM64 and AMD64 images in parallel using the ARM and AMD workflows, then creates a multiarch manifest combining both architectures.
 
 ## Prerequisites
@@ -34,7 +34,7 @@ on:
 
 jobs:
   build-multiarch:
-    uses: fricker-studios/github-actions/.github/workflows/build-multiarch-image.yml@main
+    uses: fricker-studios/github-actions/.github/workflows/build-multiarch-image/workflow.yml@main
     with:
       image_name: myorganization/myapp
       push: true
@@ -107,7 +107,7 @@ on:
 
 jobs:
   build-arm:
-    uses: fricker-studios/github-actions/.github/workflows/build-arm-image.yml@main
+    uses: fricker-studios/github-actions/.github/workflows/build-arm-image/workflow.yml@main
     with:
       image_name: myorg/myapp
       dockerfile_path: ./docker/Dockerfile
@@ -126,7 +126,7 @@ on:
 
 jobs:
   build-amd:
-    uses: fricker-studios/github-actions/.github/workflows/build-amd-image.yml@main
+    uses: fricker-studios/github-actions/.github/workflows/build-amd-image/workflow.yml@main
     with:
       image_name: myorg/myapp
       push: true
@@ -152,7 +152,7 @@ on:
 
 jobs:
   build-multiarch:
-    uses: fricker-studios/github-actions/.github/workflows/build-multiarch-image.yml@main
+    uses: fricker-studios/github-actions/.github/workflows/build-multiarch-image/workflow.yml@main
     with:
       image_name: myorg/myapp
       build_args: VERSION=${{ github.event.inputs.version }},BUILD_DATE=${{ github.run_number }}
@@ -180,7 +180,7 @@ on:
 
 jobs:
   build-multiarch:
-    uses: fricker-studios/github-actions/.github/workflows/build-multiarch-image.yml@main
+    uses: fricker-studios/github-actions/.github/workflows/build-multiarch-image/workflow.yml@main
     with:
       image_name: myorg/myapp
       # Common parameters (used if architecture-specific ones aren't provided)
@@ -221,7 +221,7 @@ on:
 
 jobs:
   build-arm:
-    uses: fricker-studios/github-actions/.github/workflows/build-arm-image.yml@main
+    uses: fricker-studios/github-actions/.github/workflows/build-arm-image/workflow.yml@main
     with:
       image_name: myorg/myapp
       push: true
@@ -231,7 +231,7 @@ jobs:
       registry_password: ${{ secrets.DOCKER_PASSWORD }}
 
   build-amd:
-    uses: fricker-studios/github-actions/.github/workflows/build-amd-image.yml@main
+    uses: fricker-studios/github-actions/.github/workflows/build-amd-image/workflow.yml@main
     with:
       image_name: myorg/myapp
       push: true
@@ -252,7 +252,7 @@ on:
 
 jobs:
   build:
-    uses: fricker-studios/github-actions/.github/workflows/build-multiarch-image.yml@main
+    uses: fricker-studios/github-actions/.github/workflows/build-multiarch-image/workflow.yml@main
     with:
       image_name: myorg/myapp
       push: true
@@ -283,7 +283,7 @@ on:
 
 jobs:
   build:
-    uses: fricker-studios/github-actions/.github/workflows/build-multiarch-image.yml@main
+    uses: fricker-studios/github-actions/.github/workflows/build-multiarch-image/workflow.yml@main
     with:
       image_name: myorg/myapp
       dockerfile_path: ./services/api/Dockerfile
@@ -309,7 +309,7 @@ These workflows support any Docker registry that uses standard authentication:
 ```yaml
 jobs:
   build:
-    uses: fricker-studios/github-actions/.github/workflows/build-multiarch-image.yml@main
+    uses: fricker-studios/github-actions/.github/workflows/build-multiarch-image/workflow.yml@main
     with:
       image_name: ghcr.io/${{ github.repository }}
       push: true

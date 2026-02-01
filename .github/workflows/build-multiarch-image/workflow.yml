@@ -79,7 +79,7 @@ on:
 
 jobs:
   build-arm:
-    uses: ./.github/workflows/build-arm-image.yml
+    uses: ./.github/workflows/build-arm-image/workflow.yml
     with:
       image_name: ${{ inputs.image_name }}
       dockerfile_path: ${{ inputs.arm_dockerfile_path != '' && inputs.arm_dockerfile_path || inputs.dockerfile_path }}
@@ -92,7 +92,7 @@ jobs:
       registry_password: ${{ secrets.registry_password }}
 
   build-amd:
-    uses: ./.github/workflows/build-amd-image.yml
+    uses: ./.github/workflows/build-amd-image/workflow.yml
     with:
       image_name: ${{ inputs.image_name }}
       dockerfile_path: ${{ inputs.amd_dockerfile_path != '' && inputs.amd_dockerfile_path || inputs.dockerfile_path }}
@@ -113,7 +113,7 @@ jobs:
 
     steps:
       - name: Login to Docker Registry
-        if: inputs.push == true && secrets.registry_username != '' && secrets.registry_password != ''
+        if: inputs.push == true
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.registry_username }}
