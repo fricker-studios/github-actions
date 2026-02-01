@@ -1,17 +1,25 @@
 # GitHub Actions - Reusable Workflows
 
-This repository contains reusable GitHub Actions workflows for building Docker images across different architectures.
+This repository contains reusable GitHub Actions workflows for building Docker images across different architectures using self-hosted runners.
 
 ## Available Workflows
 
 ### 1. Build ARM Image (`build-arm-image.yml`)
-Builds a Docker image specifically for ARM64 architecture (linux/arm64).
+Builds a Docker image specifically for ARM64 architecture (linux/arm64) on self-hosted ARM64 runners.
 
 ### 2. Build AMD Image (`build-amd-image.yml`)
-Builds a Docker image specifically for AMD64 architecture (linux/amd64).
+Builds a Docker image specifically for AMD64 architecture (linux/amd64) on self-hosted X64 runners.
 
 ### 3. Build Multiarch Image (`build-multiarch-image.yml`)
-Builds a Docker image for multiple architectures in a single manifest (default: linux/amd64 and linux/arm64).
+Builds ARM64 and AMD64 images in parallel using the ARM and AMD workflows, then creates a multiarch manifest combining both architectures.
+
+## Prerequisites
+
+⚠️ **Important**: These workflows require self-hosted runners with the following labels:
+- **ARM64**: Self-hosted runners tagged with `ARM64` label for ARM64 builds
+- **X64**: Self-hosted runners tagged with `X64` label for AMD64 builds
+
+Make sure your self-hosted runners have Docker installed and properly configured before using these workflows.
 
 ## Quick Start
 
@@ -50,12 +58,6 @@ All three workflows share the following common inputs:
 | `build_args` | Build arguments (comma-separated KEY=VALUE pairs) | No | `''` |
 | `push` | Whether to push the image to registry | No | `false` |
 | `tags` | Additional tags for the image (newline-separated) | No | `''` |
-
-**Additional input for multiarch workflow:**
-
-| Input | Description | Required | Default |
-|-------|-------------|----------|---------|
-| `platforms` | Target platforms (comma-separated) | No | `linux/amd64,linux/arm64` |
 
 ## Workflow Secrets
 
@@ -136,7 +138,6 @@ jobs:
     uses: fricker-studios/github-actions/.github/workflows/build-multiarch-image.yml@main
     with:
       image_name: myorg/myapp
-      platforms: linux/amd64,linux/arm64,linux/arm/v7
       build_args: VERSION=${{ github.event.inputs.version }},BUILD_DATE=${{ github.run_number }}
       push: true
       tags: |
@@ -147,7 +148,11 @@ jobs:
       registry_password: ${{ secrets.DOCKER_PASSWORD }}
 ```
 
-### Example 4: Build All Architectures in Parallel
+Note: The multiarch workflow automatically builds for both AMD64 and ARM64 architectures using separate self-hosted runners in parallel.
+
+### Example 4: Build All Architectures in Parallel (Manual Control)
+
+If you need to manually control individual architecture builds:
 
 ```yaml
 name: Build All Architectures
@@ -261,23 +266,33 @@ jobs:
 ## Features
 
 - ✅ **Multi-architecture support**: Build for ARM64, AMD64, or both
+- ✅ **Native architecture builds**: Uses self-hosted runners (no QEMU emulation overhead)
+- ✅ **Parallel builds**: ARM and AMD builds run simultaneously for faster execution
 - ✅ **Caching**: Automatic GitHub Actions cache for faster builds
 - ✅ **Flexible tagging**: Support for multiple tags per build
 - ✅ **Build arguments**: Pass custom build arguments to Docker
 - ✅ **Registry agnostic**: Works with any Docker registry
 - ✅ **Output support**: Access image tags and digests in dependent jobs
-- ✅ **QEMU support**: Cross-platform builds using QEMU emulation
-- ✅ **Buildx integration**: Uses Docker Buildx for advanced features
+- ✅ **Manifest creation**: Multiarch workflow automatically creates and pushes Docker manifests
 
 ## Prerequisites
 
-To use these workflows, your repository needs:
+To use these workflows, you need:
 
-1. A valid `Dockerfile` in your repository
-2. Docker registry credentials configured as GitHub secrets (if pushing images)
-3. Appropriate permissions for the GitHub token (if using GHCR)
+1. **Self-hosted runners** with the following labels:
+   - `ARM64` label for ARM64 builds
+   - `X64` label for AMD64 builds
+   - Docker installed and properly configured on all runners
+2. A valid `Dockerfile` in your repository
+3. Docker registry credentials configured as GitHub secrets (if pushing images)
+4. Appropriate permissions for the GitHub token (if using GHCR)
 
 ## Troubleshooting
+
+### Build fails with "No runner matching the specified labels"
+- Ensure you have self-hosted runners configured with `ARM64` and `X64` labels
+- Verify the runners are online and available
+- Check that Docker is installed on the runners
 
 ### Build fails with "unauthorized" error
 - Verify your registry credentials are correct
@@ -286,12 +301,13 @@ To use these workflows, your repository needs:
 
 ### Build is slow or times out
 - Consider using build caching more effectively
-- Split multiarch builds into separate jobs if needed
+- Ensure your self-hosted runners have adequate resources
 - Optimize your Dockerfile for layer caching
 
-### Platform not supported
-- Check that your base image supports the target platform
-- Verify QEMU is properly set up (handled automatically by the workflow)
+### Manifest creation fails
+- Ensure both ARM and AMD builds completed successfully
+- Verify the images were pushed to the registry (push must be true)
+- Check that the registry supports Docker manifests
 
 ## Contributing
 
