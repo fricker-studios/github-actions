@@ -107,38 +107,40 @@ jobs:
         id: manifest
         if: inputs.push == true
         run: |
-          # Get the first manifest tag as the primary tag
-          PRIMARY_TAG="${{ inputs.image_name }}:${{ github.sha }}"
-
-          # Create manifest with ARM and AMD images
-          docker manifest create $PRIMARY_TAG \
-            ${{ needs.build-arm.outputs.image_tag }} \
-            ${{ needs.build-amd.outputs.image_tag }}
-
-          # Push the manifest
-          docker manifest push $PRIMARY_TAG
-
-          # Get the digest
-          DIGEST=$(docker manifest inspect $PRIMARY_TAG | grep -oP '"digest":\s*"\K[^"]+' | head -1)
-          echo "digest=$DIGEST" >> $GITHUB_OUTPUT
-
-          # Create and push additional tags if provided
+          # Create list of all tags to manifest
+          TAGS=("${{ inputs.image_name }}:${{ github.sha }}")
           if [ -n "${{ inputs.tags }}" ]; then
             while IFS= read -r tag; do
               if [ -n "$tag" ]; then
-                TAG="${{ inputs.image_name }}:$tag"
-                docker manifest create $TAG \
-                  ${{ needs.build-arm.outputs.image_tag }} \
-                  ${{ needs.build-amd.outputs.image_tag }}
-                docker manifest push $TAG
-                echo "✅ Pushed manifest: $TAG"
+                TAGS+=("${{ inputs.image_name }}:$tag")
               fi
             done <<< "${{ inputs.tags }}"
           fi
 
-          echo "✅ Multiarch manifest created and pushed successfully"
-          echo "Primary tag: $PRIMARY_TAG"
-          echo "Digest: $DIGEST"
+          # Create and push manifest for each tag
+          DIGEST=""
+          for TAG in "${TAGS[@]}"; do
+            echo "Creating manifest for: $TAG"
+            docker manifest create "$TAG" \
+              ${{ needs.build-arm.outputs.image_tag }} \
+              ${{ needs.build-amd.outputs.image_tag }}
+            docker manifest push "$TAG"
+
+            # Get the digest from the first tag
+            if [ -z "$DIGEST" ]; then
+              if command -v jq &> /dev/null; then
+                DIGEST=$(docker manifest inspect "$TAG" | jq -r '.manifests[0].digest')
+              else
+                DIGEST=$(docker manifest inspect "$TAG" | grep -oP '"digest":\s*"\K[^"]+' | head -1)
+              fi
+            fi
+            echo "✅ Pushed manifest: $TAG"
+          done
+
+          echo "digest=$DIGEST" >> $GITHUB_OUTPUT
+          echo "✅ All multiarch manifests created and pushed successfully"
+          echo "Primary tag: ${{ inputs.image_name }}:${{ github.sha }}"
+          echo "Manifest digest: $DIGEST"
 
       - name: Create local manifest (no push)
         if: inputs.push == false
