@@ -1,0 +1,112 @@
+name: Build ARM Image
+
+on:
+  workflow_call:
+    inputs:
+      image_name:
+        description: 'Name of the Docker image to build'
+        required: true
+        type: string
+      dockerfile_path:
+        description: 'Path to the Dockerfile'
+        required: false
+        type: string
+        default: './Dockerfile'
+      context:
+        description: 'Build context path'
+        required: false
+        type: string
+        default: '.'
+      build_args:
+        description: 'Build arguments (comma-separated KEY=VALUE pairs)'
+        required: false
+        type: string
+        default: ''
+      push:
+        description: 'Whether to push the image to registry'
+        required: false
+        type: boolean
+        default: false
+      tags:
+        description: 'Additional tags for the image (newline-separated)'
+        required: false
+        type: string
+        default: ''
+    secrets:
+      registry_username:
+        description: 'Docker registry username'
+        required: false
+      registry_password:
+        description: 'Docker registry password'
+        required: false
+    outputs:
+      image_tag:
+        description: 'Full image tag that was built'
+        value: ${{ jobs.build-arm.outputs.image_tag }}
+      digest:
+        description: 'Image digest'
+        value: ${{ jobs.build-arm.outputs.digest }}
+
+jobs:
+  build-arm:
+    runs-on: [self-hosted, ARM64]
+    outputs:
+      image_tag: ${{ steps.output.outputs.image_tag }}
+      digest: ${{ steps.build.outputs.digest }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Login to Docker Registry
+        if: inputs.push == true && secrets.registry_username != '' && secrets.registry_password != ''
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.registry_username }}
+          password: ${{ secrets.registry_password }}
+
+      - name: Prepare build args
+        id: prepare-args
+        run: |
+          if [ -n "${{ inputs.build_args }}" ]; then
+            echo "build_args<<EOF" >> $GITHUB_OUTPUT
+            echo "${{ inputs.build_args }}" | tr ',' '\n' >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
+          else
+            echo "build_args=" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Prepare tags
+        id: prepare-tags
+        run: |
+          TAGS="${{ inputs.image_name }}:${{ github.sha }}-arm64"
+          if [ -n "${{ inputs.tags }}" ]; then
+            while IFS= read -r tag; do
+              if [ -n "$tag" ]; then
+                TAGS="$TAGS,${{ inputs.image_name }}:$tag-arm64"
+              fi
+            done <<< "${{ inputs.tags }}"
+          fi
+          echo "tags=$TAGS" >> $GITHUB_OUTPUT
+          echo "Built tags: $TAGS"
+
+      - name: Build and push ARM image
+        id: build
+        uses: docker/build-push-action@v5
+        with:
+          context: ${{ inputs.context }}
+          file: ${{ inputs.dockerfile_path }}
+          push: ${{ inputs.push }}
+          tags: ${{ steps.prepare-tags.outputs.tags }}
+          build-args: ${{ steps.prepare-args.outputs.build_args }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Output image information
+        id: output
+        run: |
+          echo "image_tag=${{ inputs.image_name }}:${{ github.sha }}-arm64" >> $GITHUB_OUTPUT
+          echo "digest=${{ steps.build.outputs.digest }}" >> $GITHUB_OUTPUT
+          echo "✅ ARM64 image built successfully"
+          echo "Image: ${{ inputs.image_name }}:${{ github.sha }}-arm64"
+          echo "Digest: ${{ steps.build.outputs.digest }}"
