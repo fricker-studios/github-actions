@@ -87,7 +87,7 @@ jobs:
       - name: Prepare tags
         id: prepare-tags
         run: |
-          TAGS="${{ inputs.image_name }}:arm64-${{ github.sha }}"
+          TAGS="${{ inputs.image_name }}:${{ github.sha }}-arm64"
           if [ -n "${{ inputs.tags }}" ]; then
             while IFS= read -r tag; do
               if [ -n "$tag" ]; then
@@ -114,8 +114,8 @@ jobs:
       - name: Output image information
         id: output
         run: |
-          echo "image_tag=${{ inputs.image_name }}:arm64-${{ github.sha }}" >> $GITHUB_OUTPUT
+          echo "image_tag=${{ inputs.image_name }}:${{ github.sha }}-arm64" >> $GITHUB_OUTPUT
           echo "digest=${{ steps.build.outputs.digest }}" >> $GITHUB_OUTPUT
           echo "✅ ARM64 image built successfully"
-          echo "Image: ${{ inputs.image_name }}:arm64-${{ github.sha }}"
+          echo "Image: ${{ inputs.image_name }}:${{ github.sha }}-arm64"
           echo "Digest: ${{ steps.build.outputs.digest }}"
