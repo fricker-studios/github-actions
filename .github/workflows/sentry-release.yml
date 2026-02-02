@@ -32,7 +32,7 @@ on:
 
 jobs:
   create-release:
-    runs-on: self-hosted
+    runs-on: [self-hosted]
     name: Create Sentry Release
     timeout-minutes: 10
     steps:
