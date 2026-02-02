@@ -26,6 +26,16 @@ jobs:
     name: Update GitOps Manifest
 
     steps:
+      - name: Initialize Summary
+        run: |
+          echo "## GitOps Manifest Update" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Repository:** ${{ inputs.gitops_repo }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Project Directory:** \`${{ inputs.project_source_dir }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**New Image Tag:** \`${{ inputs.image_tag }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Started:** $(date -u +'%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
       - name: Checkout gitops repo
         uses: actions/checkout@v4
         with:
@@ -38,8 +48,26 @@ jobs:
             IMAGE_TAG: ${{ inputs.image_tag }}
         run: |
             cd gitops/${{ inputs.project_source_dir }}
+            echo "📝 Updating kustomization.yaml in ${{ inputs.project_source_dir }}"
+            
+            # Capture old content
+            echo "### Before Update" >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`yaml" >> $GITHUB_STEP_SUMMARY
+            grep "newTag:" kustomization.yaml >> $GITHUB_STEP_SUMMARY || echo "No newTag found" >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            
             # Update image tags
             sed -i "s|newTag: .*|newTag: $IMAGE_TAG|g" kustomization.yaml
+            
+            # Show updated content
+            echo "### After Update" >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`yaml" >> $GITHUB_STEP_SUMMARY
+            grep "newTag:" kustomization.yaml >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            
+            echo "✅ Successfully updated kustomization.yaml"
             cat kustomization.yaml
 
       - name: Commit and push changes
@@ -47,8 +75,36 @@ jobs:
             IMAGE_TAG: ${{ inputs.image_tag }}
         run: |
             cd gitops
+            echo "📤 Committing and pushing changes..."
+            
             git config user.name "GitHub Actions"
             git config user.email "actions@github.com"
             git add ${{ inputs.project_source_dir }}/kustomization.yaml
-            git commit -m "Update ${{ inputs.project_source_dir }} images to $IMAGE_TAG" || echo "No changes to commit"
-            git push
+            
+            # Check if there are changes
+            if git diff --cached --quiet; then
+              echo "⚠️  No changes detected" >> $GITHUB_STEP_SUMMARY
+              echo "⚠️  No changes to commit"
+            else
+              COMMIT_MSG="Update ${{ inputs.project_source_dir }} images to $IMAGE_TAG"
+              git commit -m "$COMMIT_MSG"
+              git push
+              
+              # Get commit info
+              COMMIT_SHA=$(git rev-parse HEAD)
+              COMMIT_SHORT=$(git rev-parse --short HEAD)
+              
+              echo "### Commit Details" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo "- **Message:** $COMMIT_MSG" >> $GITHUB_STEP_SUMMARY
+              echo "- **SHA:** \`$COMMIT_SHORT\`" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo "✅ Successfully pushed to ${{ inputs.gitops_repo }}" >> $GITHUB_STEP_SUMMARY
+              echo "✅ Changes committed and pushed (${COMMIT_SHORT})"
+            fi
+            
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "---" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "✅ **GitOps manifest update completed successfully**" >> $GITHUB_STEP_SUMMARY
+            echo "**Completed:** $(date -u +'%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
