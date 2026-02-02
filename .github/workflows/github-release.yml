@@ -3,8 +3,8 @@ name: Create GitHub Release
 on:
   workflow_call:
     inputs:
-      github_ref:
-        description: 'Git tag/ref for the release (e.g., v1.0.0)'
+      tag:
+        description: 'Git tag for the release (e.g., v1.0.0)'
         required: true
         type: string
       release_title:
@@ -62,10 +62,10 @@ jobs:
       - name: Prepare release information
         id: prepare
         run: |
-          # Use provided title or default to github_ref
+          # Use provided title or default to tag
           TITLE="${{ inputs.release_title }}"
           if [ -z "$TITLE" ]; then
-            TITLE="${{ inputs.github_ref }}"
+            TITLE="${{ inputs.tag }}"
           fi
           echo "title=$TITLE" >> $GITHUB_OUTPUT
           echo "Release Title: $TITLE"
@@ -106,14 +106,14 @@ jobs:
             FLAGS+=("--prerelease")
           fi
           
-          echo "Creating release for tag: ${{ inputs.github_ref }}"
+          echo "Creating release for tag: ${{ inputs.tag }}"
           echo "Flags: ${FLAGS[@]}"
           
           # Create the release and capture URL
-          RELEASE_URL=$(gh release create "${{ inputs.github_ref }}" "${FLAGS[@]}")
+          RELEASE_URL=$(gh release create "${{ inputs.tag }}" "${FLAGS[@]}")
           
           # Get release ID from the API
-          RELEASE_ID=$(gh api "repos/${{ github.repository }}/releases/tags/${{ inputs.github_ref }}" --jq '.id')
+          RELEASE_ID=$(gh api "repos/${{ github.repository }}/releases/tags/${{ inputs.tag }}" --jq '.id')
           
           echo "url=$RELEASE_URL" >> $GITHUB_OUTPUT
           echo "id=$RELEASE_ID" >> $GITHUB_OUTPUT
@@ -135,7 +135,7 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
           echo "| --- | --- |" >> $GITHUB_STEP_SUMMARY
-          echo "| Tag | \`${{ inputs.github_ref }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Tag | \`${{ inputs.tag }}\` |" >> $GITHUB_STEP_SUMMARY
           echo "| Title | **${{ steps.prepare.outputs.title }}** |" >> $GITHUB_STEP_SUMMARY
           echo "| Draft | ${{ inputs.draft }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Pre-release | ${{ inputs.prerelease }} |" >> $GITHUB_STEP_SUMMARY
