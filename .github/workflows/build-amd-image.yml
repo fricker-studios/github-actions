@@ -120,6 +120,11 @@ jobs:
               ls -la frontend/dist/ | head -20
             fi
           fi
+          if [ -d "staticfiles" ]; then
+            echo ""
+            echo "=== staticfiles/ contents (first 20 items) ==="
+            ls -la staticfiles/ | head -20
+          fi
 
       - name: Login to Docker Registry
         if: inputs.push == true && inputs.registry != ''
