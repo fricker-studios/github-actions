@@ -33,7 +33,7 @@ on:
         type: boolean
         default: false
     secrets:
-      github_token:
+      gh_token:
         description: 'GitHub Personal Access Token with repo permissions'
         required: true
     outputs:
@@ -80,7 +80,7 @@ jobs:
       - name: Create GitHub Release
         id: create
         env:
-          GH_TOKEN: ${{ secrets.github_token }}
+          GH_TOKEN: ${{ secrets.gh_token }}
         run: |
           FLAGS=()
           FLAGS+=("--title" "${{ steps.prepare.outputs.title }}")
