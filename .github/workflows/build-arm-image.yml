@@ -54,6 +54,7 @@ on:
 
 jobs:
   build-arm:
+    name: Build and Push ARM Image
     runs-on: [self-hosted, ARM64]
     outputs:
       image_tag: ${{ steps.output.outputs.image_tag }}
