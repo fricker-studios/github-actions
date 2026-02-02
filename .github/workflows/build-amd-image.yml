@@ -93,41 +93,24 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: ${{ inputs.artifact_name }}
+          path: ${{ inputs.artifact_path }}
 
-      - name: Move artifacts to expected location
+      - name: Verify artifacts
         if: inputs.download_artifacts == true
         run: |
-          ARTIFACT_NAME="${{ inputs.artifact_name }}"
-          TARGET_PATH="${{ inputs.artifact_path }}"
-          
-          echo "=== Before artifact move ==="
+          echo "✅ Artifacts downloaded to: ${{ inputs.artifact_path }}"
+          echo ""
+          echo "=== Workspace structure ==="
           ls -la
-          
-          if [ -n "$ARTIFACT_NAME" ] && [ -d "$ARTIFACT_NAME" ]; then
-            echo "Found artifact directory: $ARTIFACT_NAME"
-            echo "Contents of $ARTIFACT_NAME:"
-            ls -la "$ARTIFACT_NAME"
-            
-            if [ -n "$TARGET_PATH" ] && [ "$TARGET_PATH" != "." ]; then
-              echo "Moving to target path: $TARGET_PATH"
-              mkdir -p "$TARGET_PATH"
-              mv "$ARTIFACT_NAME"/* "$TARGET_PATH"/
-            else
-              echo "Moving to workspace root"
-              mv "$ARTIFACT_NAME"/* .
+          echo ""
+          if [ -d "frontend" ]; then
+            echo "=== frontend/ contents ==="
+            ls -la frontend/
+            echo ""
+            if [ -d "frontend/dist" ]; then
+              echo "=== frontend/dist/ contents (first 20 items) ==="
+              ls -la frontend/dist/ | head -20
             fi
-            rm -rf "$ARTIFACT_NAME"
-            
-            echo "=== After artifact move ==="
-            ls -la
-            if [ -d "frontend" ]; then
-              echo "frontend directory contents:"
-              ls -la frontend/
-            fi
-          else
-            echo "ERROR: Artifact directory '$ARTIFACT_NAME' not found!"
-            echo "Current directory contents:"
-            ls -la
           fi
 
       - name: Login to Docker Registry
