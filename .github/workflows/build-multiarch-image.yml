@@ -18,7 +18,7 @@ on:
         type: string
         default: '.'
       build_args:
-        description: 'Build arguments (comma-separated KEY=VALUE pairs, used for both architectures unless overridden)'
+        description: 'Build arguments (newline-separated KEY=VALUE pairs, used for both architectures unless overridden)'
         required: false
         type: string
         default: ''
@@ -33,7 +33,7 @@ on:
         type: string
         default: ''
       arm_build_args:
-        description: 'Build arguments for ARM build (overrides build_args for ARM)'
+        description: 'Build arguments for ARM build (newline-separated KEY=VALUE pairs, overrides build_args for ARM)'
         required: false
         type: string
         default: ''
@@ -48,7 +48,7 @@ on:
         type: string
         default: ''
       amd_build_args:
-        description: 'Build arguments for AMD build (overrides build_args for AMD)'
+        description: 'Build arguments for AMD build (newline-separated KEY=VALUE pairs, overrides build_args for AMD)'
         required: false
         type: string
         default: ''
@@ -289,19 +289,19 @@ jobs:
             if [ -n "${{ inputs.build_args }}" ]; then
               echo "**Common Build Args:**" >> $GITHUB_STEP_SUMMARY
               echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
-              echo "${{ inputs.build_args }}" | tr ',' '\n' >> $GITHUB_STEP_SUMMARY
+              echo "${{ inputs.build_args }}" >> $GITHUB_STEP_SUMMARY
               echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
             fi
             if [ -n "${{ inputs.arm_build_args }}" ]; then
               echo "**ARM-specific Build Args:**" >> $GITHUB_STEP_SUMMARY
               echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
-              echo "${{ inputs.arm_build_args }}" | tr ',' '\n' >> $GITHUB_STEP_SUMMARY
+              echo "${{ inputs.arm_build_args }}" >> $GITHUB_STEP_SUMMARY
               echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
             fi
             if [ -n "${{ inputs.amd_build_args }}" ]; then
               echo "**AMD-specific Build Args:**" >> $GITHUB_STEP_SUMMARY
               echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
-              echo "${{ inputs.amd_build_args }}" | tr ',' '\n' >> $GITHUB_STEP_SUMMARY
+              echo "${{ inputs.amd_build_args }}" >> $GITHUB_STEP_SUMMARY
               echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
             fi
           fi

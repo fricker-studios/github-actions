@@ -18,7 +18,7 @@ on:
         type: string
         default: '.'
       build_args:
-        description: 'Build arguments (comma-separated KEY=VALUE pairs)'
+        description: 'Build arguments (newline-separated KEY=VALUE pairs)'
         required: false
         type: string
         default: ''
@@ -126,7 +126,7 @@ jobs:
         run: |
           if [ -n "${{ inputs.build_args }}" ]; then
             echo "build_args<<EOF" >> $GITHUB_OUTPUT
-            echo "${{ inputs.build_args }}" | tr ',' '\n' >> $GITHUB_OUTPUT
+            echo "${{ inputs.build_args }}" >> $GITHUB_OUTPUT
             echo "EOF" >> $GITHUB_OUTPUT
           else
             echo "build_args=" >> $GITHUB_OUTPUT
@@ -198,6 +198,6 @@ jobs:
           if [ -n "${{ inputs.build_args }}" ]; then
             echo "### Build Arguments" >> $GITHUB_STEP_SUMMARY
             echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
-            echo "${{ inputs.build_args }}" | tr ',' '\n' >> $GITHUB_STEP_SUMMARY
+            echo "${{ inputs.build_args }}" >> $GITHUB_STEP_SUMMARY
             echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
           fi
