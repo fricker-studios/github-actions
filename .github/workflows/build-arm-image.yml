@@ -102,9 +102,11 @@ jobs:
         with:
           context: ${{ inputs.context }}
           file: ${{ inputs.dockerfile_path }}
+          platforms: linux/arm64
           push: ${{ inputs.push }}
           tags: ${{ steps.prepare-tags.outputs.tags }}
           build-args: ${{ steps.prepare-args.outputs.build_args }}
+          provenance: false
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
