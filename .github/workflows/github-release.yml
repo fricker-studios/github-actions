@@ -107,11 +107,11 @@ jobs:
           echo "Creating release for tag: ${{ inputs.github_ref }}"
           echo "Flags: ${FLAGS[@]}"
           
-          # Create the release and capture output
-          RELEASE_OUTPUT=$(gh release create "${{ inputs.github_ref }}" "${FLAGS[@]}" --json id,url)
+          # Create the release and capture URL
+          RELEASE_URL=$(gh release create "${{ inputs.github_ref }}" "${FLAGS[@]}")
           
-          RELEASE_URL=$(echo "$RELEASE_OUTPUT" | jq -r '.url')
-          RELEASE_ID=$(echo "$RELEASE_OUTPUT" | jq -r '.id')
+          # Get release ID from the API
+          RELEASE_ID=$(gh api "repos/${{ github.repository }}/releases/tags/${{ inputs.github_ref }}" --jq '.id')
           
           echo "url=$RELEASE_URL" >> $GITHUB_OUTPUT
           echo "id=$RELEASE_ID" >> $GITHUB_OUTPUT
