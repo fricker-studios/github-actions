@@ -1,0 +1,169 @@
+name: Create GitHub Release
+
+on:
+  workflow_call:
+    inputs:
+      github_ref:
+        description: 'Git tag/ref for the release (e.g., v1.0.0)'
+        required: true
+        type: string
+      release_title:
+        description: 'Release title (defaults to github_ref if not provided)'
+        required: false
+        type: string
+        default: ''
+      release_notes:
+        description: 'Release notes (supports Markdown)'
+        required: false
+        type: string
+        default: ''
+      draft:
+        description: 'Create as draft release'
+        required: false
+        type: boolean
+        default: false
+      prerelease:
+        description: 'Mark as pre-release'
+        required: false
+        type: boolean
+        default: false
+      generate_notes:
+        description: 'Auto-generate release notes from commits'
+        required: false
+        type: boolean
+        default: false
+    secrets:
+      github_token:
+        description: 'GitHub Personal Access Token with repo permissions'
+        required: true
+    outputs:
+      release_url:
+        description: 'URL of the created release'
+        value: ${{ jobs.create-release.outputs.release_url }}
+      release_id:
+        description: 'ID of the created release'
+        value: ${{ jobs.create-release.outputs.release_id }}
+
+jobs:
+  create-release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    outputs:
+      release_url: ${{ steps.create.outputs.url }}
+      release_id: ${{ steps.create.outputs.id }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Prepare release information
+        id: prepare
+        run: |
+          # Use provided title or default to github_ref
+          TITLE="${{ inputs.release_title }}"
+          if [ -z "$TITLE" ]; then
+            TITLE="${{ inputs.github_ref }}"
+          fi
+          echo "title=$TITLE" >> $GITHUB_OUTPUT
+          echo "Release Title: $TITLE"
+
+      - name: Create release notes file
+        if: inputs.release_notes != ''
+        run: |
+          cat > release_notes.md << 'EOF'
+          ${{ inputs.release_notes }}
+          EOF
+          echo "Release notes saved to file"
+
+      - name: Create GitHub Release
+        id: create
+        env:
+          GH_TOKEN: ${{ secrets.github_token }}
+        run: |
+          FLAGS=()
+          FLAGS+=("--title" "${{ steps.prepare.outputs.title }}")
+          
+          # Add release notes if provided
+          if [ -n "${{ inputs.release_notes }}" ]; then
+            FLAGS+=("--notes-file" "release_notes.md")
+          elif [ "${{ inputs.generate_notes }}" == "true" ]; then
+            FLAGS+=("--generate-notes")
+          else
+            FLAGS+=("--notes" "")
+          fi
+          
+          # Add draft flag if specified
+          if [ "${{ inputs.draft }}" == "true" ]; then
+            FLAGS+=("--draft")
+          fi
+          
+          # Add prerelease flag if specified
+          if [ "${{ inputs.prerelease }}" == "true" ]; then
+            FLAGS+=("--prerelease")
+          fi
+          
+          echo "Creating release for tag: ${{ inputs.github_ref }}"
+          echo "Flags: ${FLAGS[@]}"
+          
+          # Create the release and capture output
+          RELEASE_OUTPUT=$(gh release create "${{ inputs.github_ref }}" "${FLAGS[@]}" --json id,url)
+          
+          RELEASE_URL=$(echo "$RELEASE_OUTPUT" | jq -r '.url')
+          RELEASE_ID=$(echo "$RELEASE_OUTPUT" | jq -r '.id')
+          
+          echo "url=$RELEASE_URL" >> $GITHUB_OUTPUT
+          echo "id=$RELEASE_ID" >> $GITHUB_OUTPUT
+          
+          echo "✅ Release created successfully!"
+          echo "Release URL: $RELEASE_URL"
+          echo "Release ID: $RELEASE_ID"
+
+      - name: Add summary
+        run: |
+          echo "# 🎉 GitHub Release Created Successfully" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Add quick access link
+          echo "🔗 **[View Release](${{ steps.create.outputs.url }})**" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          echo "## 📦 Release Information" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "| --- | --- |" >> $GITHUB_STEP_SUMMARY
+          echo "| Tag | \`${{ inputs.github_ref }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Title | **${{ steps.prepare.outputs.title }}** |" >> $GITHUB_STEP_SUMMARY
+          echo "| Draft | ${{ inputs.draft }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Pre-release | ${{ inputs.prerelease }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Auto-generated Notes | ${{ inputs.generate_notes }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Release ID | \`${{ steps.create.outputs.id }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Repository | \`${{ github.repository }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Add release notes if provided
+          if [ -n "${{ inputs.release_notes }}" ]; then
+            echo "## 📝 Release Notes" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "${{ inputs.release_notes }}" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          # Add status indicators
+          echo "## ✅ Status" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ inputs.draft }}" == "true" ]; then
+            echo "⚠️ This release was created as a **draft** and is not publicly visible yet." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "✅ Release is **published** and publicly visible." >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          if [ "${{ inputs.prerelease }}" == "true" ]; then
+            echo "🚧 This release is marked as a **pre-release**." >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "---" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "📅 Created: $(date -u '+%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
