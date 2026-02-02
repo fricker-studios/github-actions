@@ -67,6 +67,21 @@ on:
         required: false
         type: string
         default: ''
+      download_artifacts:
+        description: 'Whether to download build artifacts before building'
+        required: false
+        type: boolean
+        default: false
+      artifact_name:
+        description: 'Name of the artifact to download (if download_artifacts is true)'
+        required: false
+        type: string
+        default: ''
+      artifact_path:
+        description: 'Path where artifact contents should be moved (relative to workspace root). If empty, contents will be moved to workspace root.'
+        required: false
+        type: string
+        default: ''
     secrets:
       registry_username:
         description: 'Docker registry username'
@@ -99,6 +114,9 @@ jobs:
       push: ${{ inputs.push }}
       registry: ${{ inputs.registry }}
       tags: ${{ inputs.tags }}
+      download_artifacts: ${{ inputs.download_artifacts }}
+      artifact_name: ${{ inputs.artifact_name }}
+      artifact_path: ${{ inputs.artifact_path }}
     secrets:
       registry_username: ${{ secrets.registry_username }}
       registry_password: ${{ secrets.registry_password }}
@@ -113,6 +131,9 @@ jobs:
       push: ${{ inputs.push }}
       registry: ${{ inputs.registry }}
       tags: ${{ inputs.tags }}
+      download_artifacts: ${{ inputs.download_artifacts }}
+      artifact_name: ${{ inputs.artifact_name }}
+      artifact_path: ${{ inputs.artifact_path }}
     secrets:
       registry_username: ${{ secrets.registry_username }}
       registry_password: ${{ secrets.registry_password }}
