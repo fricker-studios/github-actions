@@ -45,9 +45,15 @@ on:
         description: 'Docker registry password'
         required: false
     outputs:
+      image_name:
+        description: 'Image name without tag'
+        value: ${{ jobs.build-amd.outputs.image_name }}
       image_tag:
-        description: 'Full image tag that was built'
+        description: 'Short image tag (e.g., commit-sha-amd64 or custom tag)'
         value: ${{ jobs.build-amd.outputs.image_tag }}
+      image_fullname:
+        description: 'Full image name with tag (image_name:image_tag)'
+        value: ${{ jobs.build-amd.outputs.image_fullname }}
       digest:
         description: 'Image digest'
         value: ${{ jobs.build-amd.outputs.digest }}
@@ -57,7 +63,9 @@ jobs:
     name: Build and Push AMD Image
     runs-on: [self-hosted, X64]
     outputs:
+      image_name: ${{ steps.output.outputs.image_name }}
       image_tag: ${{ steps.output.outputs.image_tag }}
+      image_fullname: ${{ steps.output.outputs.image_fullname }}
       digest: ${{ steps.build.outputs.digest }}
 
     steps:
@@ -114,7 +122,9 @@ jobs:
       - name: Output image information
         id: output
         run: |
-          echo "image_tag=${{ inputs.image_name }}:${{ github.sha }}-amd64" >> $GITHUB_OUTPUT
+          echo "image_name=${{ inputs.image_name }}" >> $GITHUB_OUTPUT
+          echo "image_tag=${{ github.sha }}-amd64" >> $GITHUB_OUTPUT
+          echo "image_fullname=${{ inputs.image_name }}:${{ github.sha }}-amd64" >> $GITHUB_OUTPUT
           echo "digest=${{ steps.build.outputs.digest }}" >> $GITHUB_OUTPUT
           echo "✅ AMD64 image built successfully"
           echo "Image: ${{ inputs.image_name }}:${{ github.sha }}-amd64"

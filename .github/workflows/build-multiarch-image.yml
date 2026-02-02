@@ -75,9 +75,15 @@ on:
         description: 'Docker registry password'
         required: false
     outputs:
+      image_name:
+        description: 'Image name without tag'
+        value: ${{ jobs.create-manifest.outputs.image_name }}
       image_tag:
-        description: 'Full image tag that was built'
+        description: 'Short image tag (e.g., commit-sha or first custom tag)'
         value: ${{ jobs.create-manifest.outputs.image_tag }}
+      image_fullname:
+        description: 'Full image name with tag (image_name:image_tag)'
+        value: ${{ jobs.create-manifest.outputs.image_fullname }}
       digest:
         description: 'Image digest'
         value: ${{ jobs.create-manifest.outputs.digest }}
@@ -116,7 +122,9 @@ jobs:
     needs: [build-arm, build-amd]
     runs-on: [self-hosted]
     outputs:
+      image_name: ${{ steps.output.outputs.image_name }}
       image_tag: ${{ steps.output.outputs.image_tag }}
+      image_fullname: ${{ steps.output.outputs.image_fullname }}
       digest: ${{ steps.manifest.outputs.digest }}
 
     steps:
@@ -146,8 +154,8 @@ jobs:
         id: manifest
         if: inputs.push == true
         run: |
-          echo "Using ARM image: ${{ needs.build-arm.outputs.image_tag }}"
-          echo "Using AMD image: ${{ needs.build-amd.outputs.image_tag }}"
+          echo "Using ARM image: ${{ needs.build-arm.outputs.image_fullname }}"
+          echo "Using AMD image: ${{ needs.build-amd.outputs.image_fullname }}"
           echo ""
 
           # Create list of all tags to manifest
@@ -165,8 +173,8 @@ jobs:
           for TAG in "${TAGS[@]}"; do
             echo "Creating manifest for: $TAG"
             docker manifest create "$TAG" \
-              ${{ needs.build-arm.outputs.image_tag }} \
-              ${{ needs.build-amd.outputs.image_tag }}
+              ${{ needs.build-arm.outputs.image_fullname }} \
+              ${{ needs.build-amd.outputs.image_fullname }}
             docker manifest push "$TAG"
 
             # Get the digest from the first tag
@@ -190,15 +198,25 @@ jobs:
         run: |
           echo "⚠️  Manifest creation skipped (push=false)"
           echo "Would create manifest from:"
-          echo "  - ARM: ${{ needs.build-arm.outputs.image_tag }}"
-          echo "  - AMD: ${{ needs.build-amd.outputs.image_tag }}"
+          echo "  - ARM: ${{ needs.build-arm.outputs.image_fullname }}"
+          echo "  - AMD: ${{ needs.build-amd.outputs.image_fullname }}"
 
       - name: Output image information
         id: output
         run: |
-          echo "image_tag=${{ inputs.image_name }}:${{ github.sha }}" >> $GITHUB_OUTPUT
+          # Determine the short tag (first custom tag if provided, otherwise commit sha)
+          SHORT_TAG="${{ github.sha }}"
+          if [ -n "${{ inputs.tags }}" ]; then
+            SHORT_TAG=$(echo "${{ inputs.tags }}" | head -n 1 | tr -d '[:space:]')
+          fi
+          
+          echo "image_name=${{ inputs.image_name }}" >> $GITHUB_OUTPUT
+          echo "image_tag=$SHORT_TAG" >> $GITHUB_OUTPUT
+          echo "image_fullname=${{ inputs.image_name }}:$SHORT_TAG" >> $GITHUB_OUTPUT
           echo "✅ Multiarch workflow completed"
-          echo "Image: ${{ inputs.image_name }}:${{ github.sha }}"
+          echo "Image Name: ${{ inputs.image_name }}"
+          echo "Image Tag: $SHORT_TAG"
+          echo "Full Image: ${{ inputs.image_name }}:$SHORT_TAG"
           echo "ARM digest: ${{ needs.build-arm.outputs.digest }}"
           echo "AMD digest: ${{ needs.build-amd.outputs.digest }}"
           
@@ -224,8 +242,8 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| Architecture | Image Tag | Digest |" >> $GITHUB_STEP_SUMMARY
           echo "| --- | --- | --- |" >> $GITHUB_STEP_SUMMARY
-          echo "| ARM64 | \`${{ needs.build-arm.outputs.image_tag }}\` | \`${{ needs.build-arm.outputs.digest }}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| AMD64 | \`${{ needs.build-amd.outputs.image_tag }}\` | \`${{ needs.build-amd.outputs.digest }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| ARM64 | \`${{ needs.build-arm.outputs.image_fullname }}\` | \`${{ needs.build-arm.outputs.digest }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| AMD64 | \`${{ needs.build-amd.outputs.image_fullname }}\` | \`${{ needs.build-amd.outputs.digest }}\` |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           
           if [ -n "${{ inputs.tags }}" ]; then
