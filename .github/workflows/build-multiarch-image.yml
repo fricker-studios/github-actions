@@ -205,7 +205,9 @@ jobs:
           DIGEST=""
           for TAG in "${TAGS[@]}"; do
             echo "Creating manifest for: $TAG"
-            docker manifest create --amend "$TAG" \
+            # Remove existing manifest if it exists to avoid stale references
+            docker manifest rm "$TAG" 2>/dev/null || true
+            docker manifest create "$TAG" \
               ${{ needs.build-arm.outputs.image_fullname }} \
               ${{ needs.build-amd.outputs.image_fullname }}
             docker manifest push "$TAG"
