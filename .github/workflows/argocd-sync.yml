@@ -1,0 +1,143 @@
+name: ArgoCD Sync Application
+
+on:
+  workflow_dispatch:
+    inputs:
+      application:
+        description: 'ArgoCD Application name to sync'
+        required: true
+        type: string
+      prune:
+        description: 'Allow prune during sync'
+        required: false
+        type: boolean
+        default: true
+  workflow_call:
+    inputs:
+      application:
+        description: 'ArgoCD Application name to sync'
+        required: true
+        type: string
+      prune:
+        description: 'Allow prune during sync'
+        required: false
+        type: boolean
+        default: true
+
+jobs:
+  sync:
+    runs-on: [self-hosted, x64]
+    steps:
+      - name: Initialize Summary
+        run: |
+          echo "## ArgoCD Sync: ${{ inputs.application }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Server:** ${{ vars.ARGOCD_SERVER }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Prune:** ${{ inputs.prune }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Started:** $(date -u +'%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+      - name: Login to ArgoCD
+        run: |
+          echo "🔐 Logging in to ArgoCD server: ${{ vars.ARGOCD_SERVER }}"
+          argocd login ${{ vars.ARGOCD_SERVER }} \
+            --auth-token ${{ secrets.ARGOCD_AUTH_TOKEN }} \
+            --grpc-web
+          echo "✅ Successfully logged in to ArgoCD"
+        env:
+          ARGOCD_SERVER: ${{ vars.ARGOCD_SERVER }}
+          ARGOCD_AUTH_TOKEN: ${{ secrets.ARGOCD_AUTH_TOKEN }}
+
+      - name: Get Pre-Sync Status
+        id: pre-sync
+        run: |
+          echo "📊 Getting pre-sync application status..."
+          argocd app get ${{ inputs.application }} --output json > pre-sync-status.json
+          SYNC_STATUS=$(jq -r '.status.sync.status' pre-sync-status.json)
+          HEALTH_STATUS=$(jq -r '.status.health.status' pre-sync-status.json)
+          echo "sync_status=$SYNC_STATUS" >> $GITHUB_OUTPUT
+          echo "health_status=$HEALTH_STATUS" >> $GITHUB_OUTPUT
+          echo "**Pre-Sync Status:**" >> $GITHUB_STEP_SUMMARY
+          echo "- Sync: \`$SYNC_STATUS\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Health: \`$HEALTH_STATUS\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+      - name: Sync ArgoCD Application
+        run: |
+          echo "🔄 Syncing application: ${{ inputs.application }}"
+          echo "Options: prune=${{ inputs.prune }}"
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Sync Output" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          argocd app sync ${{ inputs.application }} \
+            ${{ inputs.prune && '--prune' || '' }} \
+            --timeout 600 | tee sync-output.log
+          cat sync-output.log >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Sync command completed"
+        env:
+          ARGOCD_SERVER: ${{ vars.ARGOCD_SERVER }}
+          ARGOCD_AUTH_TOKEN: ${{ secrets.ARGOCD_AUTH_TOKEN }}
+
+      - name: Wait for Application to be Healthy
+        run: |
+          echo "⏳ Waiting for application to be healthy: ${{ inputs.application }}"
+          echo "This may take up to 10 minutes..."
+          START_TIME=$(date +%s)
+          argocd app wait ${{ inputs.application }} \
+            --health \
+            --timeout 600
+          END_TIME=$(date +%s)
+          DURATION=$((END_TIME - START_TIME))
+          echo "✅ Application is healthy (took ${DURATION}s)"
+          echo "**Health Check:** ✅ Completed in ${DURATION}s" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+        env:
+          ARGOCD_SERVER: ${{ vars.ARGOCD_SERVER }}
+          ARGOCD_AUTH_TOKEN: ${{ secrets.ARGOCD_AUTH_TOKEN }}
+
+      - name: Get Application Status
+        if: always()
+        run: |
+          echo "📋 Getting final application status..."
+          argocd app get ${{ inputs.application }} --output json > final-status.json
+          
+          SYNC_STATUS=$(jq -r '.status.sync.status' final-status.json)
+          HEALTH_STATUS=$(jq -r '.status.health.status' final-status.json)
+          SYNC_REVISION=$(jq -r '.status.sync.revision // "N/A"' final-status.json)
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "---" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Final Status" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "| -------- | ----- |" >> $GITHUB_STEP_SUMMARY
+          echo "| Sync Status | \`$SYNC_STATUS\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Health Status | \`$HEALTH_STATUS\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Revision | \`$SYNC_REVISION\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Completed | $(date -u +'%Y-%m-%d %H:%M:%S UTC') |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          echo "<details>" >> $GITHUB_STEP_SUMMARY
+          echo "<summary>Full Application Details</summary>" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          argocd app get ${{ inputs.application }} >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "</details>" >> $GITHUB_STEP_SUMMARY
+          
+          if [ "$HEALTH_STATUS" = "Healthy" ] && [ "$SYNC_STATUS" = "Synced" ]; then
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "✅ **Application is healthy and synced!**" >> $GITHUB_STEP_SUMMARY
+            echo "✅ Application is healthy and synced!"
+          else
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "⚠️ **Warning: Application may not be in desired state**" >> $GITHUB_STEP_SUMMARY
+            echo "⚠️ Warning: Application may not be in desired state"
+          fi
+        env:
+          ARGOCD_SERVER: ${{ vars.ARGOCD_SERVER }}
+          ARGOCD_AUTH_TOKEN: ${{ secrets.ARGOCD_AUTH_TOKEN }}
