@@ -82,12 +82,20 @@ on:
         required: false
         type: string
         default: '.'
+      sentry_dsn_var_name:
+        description: 'Name of the build arg variable to use for Sentry DSN (e.g., SENTRY_DSN, DNS_SENTRY_DSN). If provided with sentry_dsn secret, will inject as build arg.'
+        required: false
+        type: string
+        default: ''
     secrets:
       registry_username:
         description: 'Docker registry username'
         required: false
       registry_password:
         description: 'Docker registry password'
+        required: false
+      sentry_dsn:
+        description: 'Sentry DSN for error tracking'
         required: false
     outputs:
       image_name:
@@ -134,9 +142,11 @@ jobs:
       download_artifacts: ${{ inputs.download_artifacts }}
       artifact_name: ${{ inputs.artifact_name }}
       artifact_path: ${{ inputs.artifact_path }}
+      sentry_dsn_var_name: ${{ inputs.sentry_dsn_var_name }}
     secrets:
       registry_username: ${{ secrets.registry_username }}
       registry_password: ${{ secrets.registry_password }}
+      sentry_dsn: ${{ secrets.sentry_dsn }}
 
   create-manifest:
     name: Create and Push Multiarch Manifest

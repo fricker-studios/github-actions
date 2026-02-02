@@ -52,12 +52,20 @@ on:
         required: false
         type: string
         default: '.'
+      sentry_dsn_var_name:
+        description: 'Name of the build arg variable to use for Sentry DSN (e.g., SENTRY_DSN, DNS_SENTRY_DSN). If provided with sentry_dsn secret, will inject as build arg.'
+        required: false
+        type: string
+        default: ''
     secrets:
       registry_username:
         description: 'Docker registry username'
         required: false
       registry_password:
         description: 'Docker registry password'
+        required: false
+      sentry_dsn:
+        description: 'Sentry DSN for error tracking'
         required: false
     outputs:
       image_name:
@@ -124,9 +132,21 @@ jobs:
       - name: Prepare build args
         id: prepare-args
         run: |
-          if [ -n "${{ inputs.build_args }}" ]; then
+          BUILD_ARGS="${{ inputs.build_args }}"
+          # Inject SENTRY_DSN if provided as secret and var name is specified
+          if [ -n "${{ secrets.sentry_dsn }}" ] && [ -n "${{ inputs.sentry_dsn_var_name }}" ]; then
+            VAR_NAME="${{ inputs.sentry_dsn_var_name }}"
+            # Replace placeholder or append
+            if echo "$BUILD_ARGS" | grep -q "${VAR_NAME}="; then
+              BUILD_ARGS=$(echo "$BUILD_ARGS" | sed "s|${VAR_NAME}=.*|${VAR_NAME}=${{ secrets.sentry_dsn }}|")
+            else
+              BUILD_ARGS="${BUILD_ARGS}${BUILD_ARGS:+$'\n'}${VAR_NAME}=${{ secrets.sentry_dsn }}"
+            fi
+          fi
+          
+          if [ -n "$BUILD_ARGS" ]; then
             echo "build_args<<EOF" >> $GITHUB_OUTPUT
-            echo "${{ inputs.build_args }}" >> $GITHUB_OUTPUT
+            echo "$BUILD_ARGS" >> $GITHUB_OUTPUT
             echo "EOF" >> $GITHUB_OUTPUT
           else
             echo "build_args=" >> $GITHUB_OUTPUT
