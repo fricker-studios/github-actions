@@ -101,7 +101,7 @@ jobs:
           TARGET_PATH="${{ inputs.artifact_path }}"
           
           if [ -n "$ARTIFACT_NAME" ] && [ -d "$ARTIFACT_NAME" ]; then
-            if [ -n "$TARGET_PATH" ]; then
+            if [ -n "$TARGET_PATH" ] && [ "$TARGET_PATH" != "." ]; then
               mkdir -p "$TARGET_PATH"
               mv "$ARTIFACT_NAME"/* "$TARGET_PATH"/
             else
