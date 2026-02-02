@@ -1,0 +1,145 @@
+name: Create Sentry Release
+
+on:
+  workflow_call:
+    inputs:
+      release_version:
+        description: 'Release version/tag to create in Sentry'
+        required: true
+        type: string
+      sentry_org:
+        description: 'Sentry organization name'
+        required: true
+        type: string
+      sentry_project:
+        description: 'Sentry project name'
+        required: true
+        type: string
+      sentry_url:
+        description: 'Sentry instance URL'
+        required: false
+        type: string
+        default: 'https://sentry.io'
+      auto_commit_detection:
+        description: 'Automatically detect and associate commits'
+        required: false
+        type: boolean
+        default: true
+    secrets:
+      SENTRY_AUTH_TOKEN:
+        description: 'Sentry authentication token'
+        required: true
+
+jobs:
+  create-release:
+    runs-on: self-hosted
+    name: Create Sentry Release
+    timeout-minutes: 10
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Initialize Summary
+        run: |
+          echo "## Sentry Release: ${{ inputs.release_version }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Organization:** ${{ inputs.sentry_org }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Project:** ${{ inputs.sentry_project }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Sentry URL:** ${{ inputs.sentry_url }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Auto-detect commits:** ${{ inputs.auto_commit_detection }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Started:** $(date -u +'%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+      - name: Create Sentry Release
+        timeout-minutes: 3
+        run: |
+          echo "🆕 Creating Sentry release: ${{ inputs.release_version }}"
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Release Creation" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          sentry-cli --url ${{ inputs.sentry_url }} releases new "${{ inputs.release_version }}" 2>&1 | tee release-output.log
+          cat release-output.log >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Release created successfully"
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: ${{ inputs.sentry_org }}
+          SENTRY_PROJECT: ${{ inputs.sentry_project }}
+
+      - name: Associate Commits
+        if: inputs.auto_commit_detection
+        timeout-minutes: 3
+        run: |
+          echo "🔗 Associating commits with release..."
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Commit Association" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          sentry-cli --url ${{ inputs.sentry_url }} releases set-commits "${{ inputs.release_version }}" --auto --ignore-missing 2>&1 | tee commits-output.log
+          cat commits-output.log >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Commits associated successfully"
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: ${{ inputs.sentry_org }}
+          SENTRY_PROJECT: ${{ inputs.sentry_project }}
+
+      - name: Finalize Release
+        timeout-minutes: 3
+        run: |
+          echo "✨ Finalizing Sentry release..."
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Release Finalization" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          sentry-cli --url ${{ inputs.sentry_url }} releases finalize "${{ inputs.release_version }}" 2>&1 | tee finalize-output.log
+          cat finalize-output.log >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Release finalized successfully"
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: ${{ inputs.sentry_org }}
+          SENTRY_PROJECT: ${{ inputs.sentry_project }}
+
+      - name: Get Release Info
+        if: always()
+        run: |
+          echo "📋 Getting release information..."
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "---" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Release Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "| -------- | ----- |" >> $GITHUB_STEP_SUMMARY
+          echo "| Version | \`${{ inputs.release_version }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Organization | \`${{ inputs.sentry_org }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Project | \`${{ inputs.sentry_project }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Sentry URL | ${{ inputs.sentry_url }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Completed | $(date -u +'%Y-%m-%d %H:%M:%S UTC') |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Try to get release details
+          if sentry-cli --url ${{ inputs.sentry_url }} releases info "${{ inputs.release_version }}" > release-info.txt 2>&1; then
+            echo "<details>" >> $GITHUB_STEP_SUMMARY
+            echo "<summary>Full Release Details</summary>" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+            cat release-info.txt >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "</details>" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "✅ **Sentry release created and finalized successfully!**" >> $GITHUB_STEP_SUMMARY
+            echo "✅ Sentry release created successfully!"
+          else
+            echo "⚠️ **Warning: Could not retrieve release details**" >> $GITHUB_STEP_SUMMARY
+            echo "⚠️ Warning: Could not retrieve release details"
+          fi
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: ${{ inputs.sentry_org }}
+          SENTRY_PROJECT: ${{ inputs.sentry_project }}
