@@ -81,7 +81,7 @@ on:
         description: 'Path where artifact contents should be moved (relative to workspace root). If empty, contents will be moved to workspace root.'
         required: false
         type: string
-        default: ''
+        default: '.'
     secrets:
       registry_username:
         description: 'Docker registry username'
