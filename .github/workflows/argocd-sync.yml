@@ -20,6 +20,7 @@ on:
 jobs:
   sync:
     runs-on: [self-hosted, x64]
+    name: Sync ArgoCD Application
     steps:
       - name: Initialize Summary
         run: |
