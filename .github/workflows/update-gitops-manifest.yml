@@ -1,0 +1,54 @@
+name: Update Kustomization for GitOps Manifest
+
+on:
+  workflow_call:
+    inputs:
+      image_tag:
+        description: 'The new image tag to set in the kustomization.yaml'
+        required: true
+        type: string
+      gitops_repo:
+        description: 'The GitOps repository to update'
+        required: true
+        type: string
+      project_source_dir:
+        description: 'The directory within the GitOps repo where the kustomization.yaml is located'
+        required: true
+        type: string
+    secrets:
+      GITOPS_ACCESS_TOKEN:
+        description: 'Personal Access Token for accessing the GitOps repository'
+        required: true
+
+jobs:
+  update-gitops-manifest:
+    runs-on: [self-hosted]
+    name: Update GitOps Manifest
+
+    steps:
+      - name: Checkout gitops repo
+        uses: actions/checkout@v4
+        with:
+            repository: ${{ inputs.gitops_repo }}
+            token: ${{ secrets.GITOPS_ACCESS_TOKEN }}
+            path: gitops
+
+      - name: Update kustomization.yaml
+        env:
+            IMAGE_TAG: ${{ inputs.image_tag }}
+        run: |
+            cd gitops/${{ inputs.project_source_dir }}
+            # Update image tags
+            sed -i "s|newTag: .*|newTag: $IMAGE_TAG|g" kustomization.yaml
+            cat kustomization.yaml
+
+      - name: Commit and push changes
+        env:
+            IMAGE_TAG: ${{ inputs.image_tag }}
+        run: |
+            cd gitops
+            git config user.name "GitHub Actions"
+            git config user.email "actions@github.com"
+            git add ${{ inputs.project_source_dir }}/kustomization.yaml
+            git commit -m "Update ${{ inputs.project_source_dir }} images to $IMAGE_TAG" || echo "No changes to commit"
+            git push
