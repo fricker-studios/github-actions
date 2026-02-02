@@ -168,41 +168,14 @@ jobs:
             done <<< "${{ inputs.tags }}"
           fi
 
-          # Function to create and push manifest with retry logic
-          create_and_push_manifest() {
-            local TAG=$1
-            local MAX_ATTEMPTS=5
-            local RETRY_DELAY=10
-            
-            for attempt in $(seq 1 $MAX_ATTEMPTS); do
-              echo "Attempt $attempt/$MAX_ATTEMPTS for: $TAG"
-              
-              if docker manifest create --amend "$TAG" \
-                ${{ needs.build-arm.outputs.image_fullname }} \
-                ${{ needs.build-amd.outputs.image_fullname }} && \
-                docker manifest push "$TAG"; then
-                echo "✅ Successfully pushed manifest: $TAG"
-                return 0
-              else
-                if [ $attempt -lt $MAX_ATTEMPTS ]; then
-                  echo "⚠️  Attempt $attempt failed, retrying in ${RETRY_DELAY}s..."
-                  sleep $RETRY_DELAY
-                else
-                  echo "❌ Failed to create/push manifest after $MAX_ATTEMPTS attempts"
-                  return 1
-                fi
-              fi
-            done
-          }
-
           # Create and push manifest for each tag
           DIGEST=""
           for TAG in "${TAGS[@]}"; do
             echo "Creating manifest for: $TAG"
-            if ! create_and_push_manifest "$TAG"; then
-              echo "❌ Failed to create manifest for: $TAG"
-              exit 1
-            fi
+            docker manifest create --amend "$TAG" \
+              ${{ needs.build-arm.outputs.image_fullname }} \
+              ${{ needs.build-amd.outputs.image_fullname }}
+            docker manifest push "$TAG"
 
             # Get the digest from the first tag
             if [ -z "$DIGEST" ]; then
@@ -212,6 +185,7 @@ jobs:
                 DIGEST=$(docker manifest inspect "$TAG" | grep -oP '"digest":\s*"\K[^"]+' | head -1)
               fi
             fi
+            echo "✅ Pushed manifest: $TAG"
           done
 
           echo "digest=$DIGEST" >> $GITHUB_OUTPUT
