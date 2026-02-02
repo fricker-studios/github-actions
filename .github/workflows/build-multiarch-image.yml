@@ -121,6 +121,7 @@ jobs:
     name: Create and Push Multiarch Manifest
     needs: [build-arm, build-amd]
     runs-on: [self-hosted]
+    timeout-minutes: 10
     outputs:
       image_name: ${{ steps.output.outputs.image_name }}
       image_tag: ${{ steps.output.outputs.image_tag }}
@@ -153,6 +154,7 @@ jobs:
       - name: Create and push multiarch manifest
         id: manifest
         if: inputs.push == true
+        timeout-minutes: 8
         run: |
           echo "Using ARM image: ${{ needs.build-arm.outputs.image_fullname }}"
           echo "Using AMD image: ${{ needs.build-amd.outputs.image_fullname }}"

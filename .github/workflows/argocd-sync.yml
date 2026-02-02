@@ -21,6 +21,7 @@ jobs:
   sync:
     runs-on: [self-hosted, x64]
     name: Sync ArgoCD Application
+    timeout-minutes: 20
     steps:
       - name: Initialize Summary
         run: |
@@ -33,6 +34,7 @@ jobs:
 
       - name: Get Pre-Sync Status
         id: pre-sync
+        timeout-minutes: 2
         run: |
           echo "📊 Getting pre-sync application status..."
           argocd app get ${{ inputs.application }} --grpc-web --output json > pre-sync-status.json
@@ -49,6 +51,7 @@ jobs:
           ARGOCD_AUTH_TOKEN: ${{ secrets.ARGOCD_AUTH_TOKEN }}
 
       - name: Sync ArgoCD Application
+        timeout-minutes: 12
         run: |
           echo "🔄 Syncing application: ${{ inputs.application }}"
           echo "Options: prune=${{ inputs.prune }}"
@@ -67,6 +70,7 @@ jobs:
           ARGOCD_AUTH_TOKEN: ${{ secrets.ARGOCD_AUTH_TOKEN }}
 
       - name: Wait for Application to be Healthy
+        timeout-minutes: 12
         run: |
           echo "⏳ Waiting for application to be healthy: ${{ inputs.application }}"
           echo "This may take up to 10 minutes..."

@@ -24,6 +24,7 @@ jobs:
   update-gitops-manifest:
     runs-on: [self-hosted]
     name: Update GitOps Manifest
+    timeout-minutes: 10
 
     steps:
       - name: Initialize Summary
@@ -44,6 +45,7 @@ jobs:
             path: gitops
 
       - name: Update kustomization.yaml
+        timeout-minutes: 2
         env:
             IMAGE_TAG: ${{ inputs.image_tag }}
         run: |
@@ -71,6 +73,7 @@ jobs:
             cat kustomization.yaml
 
       - name: Commit and push changes
+        timeout-minutes: 5
         env:
             IMAGE_TAG: ${{ inputs.image_tag }}
         run: |
