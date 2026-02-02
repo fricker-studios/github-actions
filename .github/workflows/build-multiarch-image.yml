@@ -113,7 +113,7 @@ jobs:
 
   create-manifest:
     needs: [build-arm, build-amd]
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted]
     outputs:
       image_tag: ${{ steps.output.outputs.image_tag }}
       digest: ${{ steps.manifest.outputs.digest }}
@@ -200,3 +200,73 @@ jobs:
           echo "Image: ${{ inputs.image_name }}:${{ github.sha }}"
           echo "ARM digest: ${{ needs.build-arm.outputs.digest }}"
           echo "AMD digest: ${{ needs.build-amd.outputs.digest }}"
+          
+          # Add comprehensive summary to GitHub Step Summary
+          echo "# 🎉 Multiarch Image Build Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          echo "## 📦 Manifest Information" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "| --- | --- |" >> $GITHUB_STEP_SUMMARY
+          echo "| Primary Tag | \`${{ inputs.image_name }}:${{ github.sha }}\` |" >> $GITHUB_STEP_SUMMARY
+          if [ -n "${{ steps.manifest.outputs.digest }}" ]; then
+            echo "| Manifest Digest | \`${{ steps.manifest.outputs.digest }}\` |" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "| Pushed | ${{ inputs.push }} |" >> $GITHUB_STEP_SUMMARY
+          if [ -n "${{ inputs.registry }}" ]; then
+            echo "| Registry | ${{ inputs.registry }} |" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          echo "## 🏗️ Architecture-Specific Images" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Architecture | Image Tag | Digest |" >> $GITHUB_STEP_SUMMARY
+          echo "| --- | --- | --- |" >> $GITHUB_STEP_SUMMARY
+          echo "| ARM64 | \`${{ needs.build-arm.outputs.image_tag }}\` | \`${{ needs.build-arm.outputs.digest }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| AMD64 | \`${{ needs.build-amd.outputs.image_tag }}\` | \`${{ needs.build-amd.outputs.digest }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [ -n "${{ inputs.tags }}" ]; then
+            echo "## 🏷️ All Tags Created" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "| Tag | Architectures |" >> $GITHUB_STEP_SUMMARY
+            echo "| --- | --- |" >> $GITHUB_STEP_SUMMARY
+            echo "| \`${{ inputs.image_name }}:${{ github.sha }}\` | arm64, amd64 |" >> $GITHUB_STEP_SUMMARY
+            while IFS= read -r tag; do
+              if [ -n "$tag" ]; then
+                echo "| \`${{ inputs.image_name }}:$tag\` | arm64, amd64 |" >> $GITHUB_STEP_SUMMARY
+              fi
+            done <<< "${{ inputs.tags }}"
+            echo "" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          if [ -n "${{ inputs.build_args }}" ] || [ -n "${{ inputs.arm_build_args }}" ] || [ -n "${{ inputs.amd_build_args }}" ]; then
+            echo "## ⚙️ Build Configuration" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            if [ -n "${{ inputs.build_args }}" ]; then
+              echo "**Common Build Args:**" >> $GITHUB_STEP_SUMMARY
+              echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+              echo "${{ inputs.build_args }}" | tr ',' '\n' >> $GITHUB_STEP_SUMMARY
+              echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+            fi
+            if [ -n "${{ inputs.arm_build_args }}" ]; then
+              echo "**ARM-specific Build Args:**" >> $GITHUB_STEP_SUMMARY
+              echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+              echo "${{ inputs.arm_build_args }}" | tr ',' '\n' >> $GITHUB_STEP_SUMMARY
+              echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+            fi
+            if [ -n "${{ inputs.amd_build_args }}" ]; then
+              echo "**AMD-specific Build Args:**" >> $GITHUB_STEP_SUMMARY
+              echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+              echo "${{ inputs.amd_build_args }}" | tr ',' '\n' >> $GITHUB_STEP_SUMMARY
+              echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+            fi
+          fi
+          
+          if [ "${{ inputs.push }}" == "false" ]; then
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "---" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "⚠️ **Note:** Images were built but not pushed (push=false)" >> $GITHUB_STEP_SUMMARY
+          fi
