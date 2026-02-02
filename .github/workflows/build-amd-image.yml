@@ -54,6 +54,7 @@ on:
 
 jobs:
   build-amd:
+    name: Build and Push AMD Image
     runs-on: [self-hosted, X64]
     outputs:
       image_tag: ${{ steps.output.outputs.image_tag }}

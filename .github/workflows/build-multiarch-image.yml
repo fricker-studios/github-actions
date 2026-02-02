@@ -112,6 +112,7 @@ jobs:
       registry_password: ${{ secrets.registry_password }}
 
   create-manifest:
+    name: Create and Push Multiarch Manifest
     needs: [build-arm, build-amd]
     runs-on: [self-hosted]
     outputs:
