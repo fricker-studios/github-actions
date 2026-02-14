@@ -131,11 +131,15 @@ jobs:
 
       - name: Login to Container Registry
         if: inputs.push == true && inputs.registry != ''
+        env:
+          REGISTRY_USERNAME: ${{ secrets.registry_username }}
+          REGISTRY_PASSWORD: ${{ secrets.registry_password }}
+          REGISTRY_URL: ${{ inputs.registry }}
         run: |
-          echo "${{ secrets.registry_password }}" | buildah login \
-            --username "${{ secrets.registry_username }}" \
+          printf '%s' "$REGISTRY_PASSWORD" | buildah login \
+            --username "$REGISTRY_USERNAME" \
             --password-stdin \
-            ${{ inputs.registry }}
+            "$REGISTRY_URL"
 
       - name: Prepare build args
         id: prepare-args
