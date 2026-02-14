@@ -85,6 +85,9 @@ jobs:
   build-amd:
     name: Build and Push AMD Image
     runs-on: [self-hosted, X64]
+    container:
+      image: quay.io/buildah/stable:latest
+      options: --privileged
     timeout-minutes: 60
     outputs:
       image_name: ${{ steps.output.outputs.image_name }}
@@ -126,13 +129,13 @@ jobs:
             ls -la staticfiles/ | head -20
           fi
 
-      - name: Login to Docker Registry
+      - name: Login to Container Registry
         if: inputs.push == true && inputs.registry != ''
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ inputs.registry }}
-          username: ${{ secrets.registry_username }}
-          password: ${{ secrets.registry_password }}
+        run: |
+          echo "${{ secrets.registry_password }}" | buildah login \
+            --username "${{ secrets.registry_username }}" \
+            --password-stdin \
+            ${{ inputs.registry }}
 
       - name: Prepare build args
         id: prepare-args
@@ -173,17 +176,49 @@ jobs:
 
       - name: Build and push AMD image
         id: build
-        uses: docker/build-push-action@v5
-        with:
-          context: ${{ inputs.context }}
-          file: ${{ inputs.dockerfile_path }}
-          platforms: linux/amd64
-          push: ${{ inputs.push }}
-          tags: ${{ steps.prepare-tags.outputs.tags }}
-          build-args: ${{ steps.prepare-args.outputs.build_args }}
-          provenance: false
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+        run: |
+          # Parse tags
+          TAGS="${{ steps.prepare-tags.outputs.tags }}"
+          IFS=',' read -ra TAG_ARRAY <<< "$TAGS"
+          
+          # Build image with buildah
+          BUILD_ARGS=""
+          if [ -n "${{ steps.prepare-args.outputs.build_args }}" ]; then
+            while IFS= read -r arg; do
+              if [ -n "$arg" ]; then
+                BUILD_ARGS="$BUILD_ARGS --build-arg $arg"
+              fi
+            done <<< "${{ steps.prepare-args.outputs.build_args }}"
+          fi
+          
+          # Build with first tag
+          buildah bud \
+            --tag "${TAG_ARRAY[0]}" \
+            --file "${{ inputs.dockerfile_path }}" \
+            --format docker \
+            --arch amd64 \
+            $BUILD_ARGS \
+            "${{ inputs.context }}"
+          
+          # Tag with additional tags
+          for ((i=1; i<${#TAG_ARRAY[@]}; i++)); do
+            buildah tag "${TAG_ARRAY[0]}" "${TAG_ARRAY[i]}"
+          done
+          
+          # Push all tags if requested
+          if [ "${{ inputs.push }}" == "true" ]; then
+            for tag in "${TAG_ARRAY[@]}"; do
+              echo "Pushing $tag..."
+              buildah push "$tag"
+            done
+          fi
+          
+          # Get digest from the first image
+          DIGEST=$(buildah inspect --format '{{.FromImageDigest}}' "${TAG_ARRAY[0]}" || \
+                   buildah inspect --format '{{.Docker.ContainerConfig.Image}}' "${TAG_ARRAY[0]}" || \
+                   echo "sha256:$(buildah inspect "${TAG_ARRAY[0]}" | sha256sum | cut -d' ' -f1)")
+          
+          echo "digest=$DIGEST" >> $GITHUB_OUTPUT
 
       - name: Output image information
         id: output
