@@ -48,6 +48,8 @@ jobs:
   create-release:
     name: Create GitHub Release
     runs-on: [self-hosted]
+    container:
+      image: docker.io/ubuntu:latest
     timeout-minutes: 10
     outputs:
       release_url: ${{ steps.create.outputs.url }}
