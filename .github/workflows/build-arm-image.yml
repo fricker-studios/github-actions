@@ -85,9 +85,6 @@ jobs:
   build-arm:
     name: Build and Push ARM Image
     runs-on: [self-hosted, ARM64]
-    container:
-      image: quay.io/buildah/stable:latest
-      options: --privileged
     timeout-minutes: 60
     outputs:
       image_name: ${{ steps.output.outputs.image_name }}
@@ -136,7 +133,7 @@ jobs:
           REGISTRY_PASSWORD: ${{ secrets.registry_password }}
           REGISTRY_URL: ${{ inputs.registry }}
         run: |
-          printf '%s' "$REGISTRY_PASSWORD" | buildah login \
+          printf '%s' "$REGISTRY_PASSWORD" | docker login \
             --username "$REGISTRY_USERNAME" \
             --password-stdin \
             "$REGISTRY_URL"
@@ -196,31 +193,27 @@ jobs:
           fi
           
           # Build with first tag
-          buildah bud \
+          docker build \
             --tag "${TAG_ARRAY[0]}" \
             --file "${{ inputs.dockerfile_path }}" \
-            --format docker \
-            --arch arm64 \
             $BUILD_ARGS \
             "${{ inputs.context }}"
           
           # Tag with additional tags
           for ((i=1; i<${#TAG_ARRAY[@]}; i++)); do
-            buildah tag "${TAG_ARRAY[0]}" "${TAG_ARRAY[i]}"
+            docker tag "${TAG_ARRAY[0]}" "${TAG_ARRAY[i]}"
           done
           
           # Push all tags if requested
           if [ "${{ inputs.push }}" == "true" ]; then
             for tag in "${TAG_ARRAY[@]}"; do
               echo "Pushing $tag..."
-              buildah push "$tag"
+              docker push "$tag"
             done
           fi
           
           # Get digest from the first image
-          DIGEST=$(buildah inspect --format '{{.FromImageDigest}}' "${TAG_ARRAY[0]}" || \
-                   buildah inspect --format '{{.Docker.ContainerConfig.Image}}' "${TAG_ARRAY[0]}" || \
-                   echo "sha256:$(buildah inspect "${TAG_ARRAY[0]}" | sha256sum | cut -d' ' -f1)")
+          DIGEST=$(docker inspect --format '{{.RepoDigests}}' "${TAG_ARRAY[0]}" | awk -F'@' '{print $2}' | tr -d '[]')
           
           echo "digest=$DIGEST" >> $GITHUB_OUTPUT
 
