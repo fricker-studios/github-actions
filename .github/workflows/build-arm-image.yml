@@ -177,45 +177,17 @@ jobs:
 
       - name: Build and push ARM image
         id: build
-        run: |
-          # Parse tags
-          TAGS="${{ steps.prepare-tags.outputs.tags }}"
-          IFS=',' read -ra TAG_ARRAY <<< "$TAGS"
-          
-          # Build image with buildah
-          BUILD_ARGS=""
-          if [ -n "${{ steps.prepare-args.outputs.build_args }}" ]; then
-            while IFS= read -r arg; do
-              if [ -n "$arg" ]; then
-                BUILD_ARGS="$BUILD_ARGS --build-arg $arg"
-              fi
-            done <<< "${{ steps.prepare-args.outputs.build_args }}"
-          fi
-          
-          # Build with first tag
-          docker build \
-            --tag "${TAG_ARRAY[0]}" \
-            --file "${{ inputs.dockerfile_path }}" \
-            $BUILD_ARGS \
-            "${{ inputs.context }}"
-          
-          # Tag with additional tags
-          for ((i=1; i<${#TAG_ARRAY[@]}; i++)); do
-            docker tag "${TAG_ARRAY[0]}" "${TAG_ARRAY[i]}"
-          done
-          
-          # Push all tags if requested
-          if [ "${{ inputs.push }}" == "true" ]; then
-            for tag in "${TAG_ARRAY[@]}"; do
-              echo "Pushing $tag..."
-              docker push "$tag"
-            done
-          fi
-          
-          # Get digest from the first image
-          DIGEST=$(docker inspect --format '{{.RepoDigests}}' "${TAG_ARRAY[0]}" | awk -F'@' '{print $2}' | tr -d '[]')
-          
-          echo "digest=$DIGEST" >> $GITHUB_OUTPUT
+        uses: docker/build-push-action@v5
+        with:
+          context: ${{ inputs.context }}
+          file: ${{ inputs.dockerfile_path }}
+          platforms: linux/arm64
+          push: ${{ inputs.push }}
+          tags: ${{ steps.prepare-tags.outputs.tags }}
+          build-args: ${{ steps.prepare-args.outputs.build_args }}
+          provenance: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
       - name: Output image information
         id: output
