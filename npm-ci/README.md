@@ -74,7 +74,9 @@ policy starts with a measured cold seed and its own compatibility partition.
 ## Operations
 
 Job summaries report exact/prefix/miss outcome, matched key, install seconds,
-cache size and save result. npm HTTP logging in the install step exposes
+cache size, save step outcome and an explicit post-save archive lookup. A save
+step can exit zero after a transport warning; the lookup prevents reporting
+that as confirmed persistence. npm HTTP logging in the install step exposes
 requests/misses. A high archive hit rate does not prove low npm WAN traffic.
 
 The lab backend has 14-day idle retention (daily cleanup, so allow one extra

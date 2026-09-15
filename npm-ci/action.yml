@@ -75,6 +75,16 @@ runs:
       with:
         path: ${{ steps.prepare.outputs.cache }}/_cacache
         key: ${{ steps.prepare.outputs.key }}
+    # cache/save can log a warning and still exit zero. Check persistence
+    # explicitly so summaries do not misreport a failed save as successful.
+    - id: verify-save
+      if: steps.save.outcome == 'success'
+      uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
+      continue-on-error: true
+      with:
+        path: ${{ steps.prepare.outputs.cache }}/_cacache
+        key: ${{ steps.prepare.outputs.key }}
+        lookup-only: true
     - name: Cache summary
       if: always()
       shell: bash
@@ -84,12 +94,17 @@ runs:
         RESTORE_OUTCOME: ${{ steps.restore.outcome }}
         INSTALL_OUTCOME: ${{ steps.install.outcome }}
         SAVE_OUTCOME: ${{ steps.save.outcome }}
+        ARCHIVE_PRESENT: ${{ steps.verify-save.outputs.cache-hit }}
         INSTALL_SECONDS: ${{ steps.install.outputs.seconds }}
       run: |
+        if [ "$SAVE_OUTCOME" = success ] && [ "$ARCHIVE_PRESENT" != true ]; then
+          echo "::warning::npm cache archive was not confirmed after save; inspect cache transport logs."
+        fi
         {
           echo '### npm dependency cache'
           echo "- Exact hit: ${EXACT_HIT:-false}; matched key: ${MATCHED_KEY:-none}"
-          echo "- Restore: $RESTORE_OUTCOME; install: $INSTALL_OUTCOME (${INSTALL_SECONDS:-unknown}s); save: $SAVE_OUTCOME"
+          echo "- Restore step: $RESTORE_OUTCOME; install: $INSTALL_OUTCOME (${INSTALL_SECONDS:-unknown}s)"
+          echo "- Save step: $SAVE_OUTCOME; archive confirmed after save: ${ARCHIVE_PRESENT:-not checked}"
           if [ -d "$NPM_CONFIG_CACHE/_cacache" ]; then
             echo "- Local tarball cache: $(du -sk "$NPM_CONFIG_CACHE/_cacache" | cut -f1) KiB"
           fi
