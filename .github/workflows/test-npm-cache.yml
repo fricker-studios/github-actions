@@ -27,3 +27,24 @@ jobs:
         run: |
           npm --prefix npm-ci/fixture ci --offline --no-audit --no-fund
           node -e "if (!require('./npm-ci/fixture/node_modules/is-number')(42)) process.exit(1)"
+      - name: Change lockfile metadata and discard the local job cache
+        run: |
+          node -e "const fs=require('fs'),p='npm-ci/fixture/package-lock.json',v=JSON.parse(fs.readFileSync(p));v.packages[''].description=process.env.GITHUB_RUN_ID;fs.writeFileSync(p,JSON.stringify(v));"
+          case "$NPM_CONFIG_CACHE" in "$RUNNER_TEMP"/npm-public-*) rm -rf -- "$NPM_CONFIG_CACHE";; *) exit 1;; esac
+      - name: Prove fallback restores enough for an offline install
+        uses: ./npm-ci
+        with:
+          node-version-file: npm-ci/fixture/.nvmrc
+          working-directory: npm-ci/fixture
+          install-command: npm --prefix npm-ci/fixture ci --offline --no-audit --no-fund
+      - name: Installation errors must remain errors
+        id: failing
+        continue-on-error: true
+        uses: ./npm-ci
+        with:
+          node-version-file: npm-ci/fixture/.nvmrc
+          working-directory: npm-ci/fixture
+          install-command: exit 17
+      - name: Assert install failure was preserved
+        if: steps.failing.outcome != 'failure'
+        run: exit 1
