@@ -9,10 +9,12 @@ permissions:
   contents: read
 jobs:
   cache:
-    runs-on: ubuntu-latest
+    # Fork code never enters the lab network.
+    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-latest' || matrix.runner }}
     strategy:
       matrix:
         lane: [1, 2]
+        runner: [ubuntu-latest, arc-runner-fricker-amd64]
     steps:
       - uses: actions/checkout@v6
         with:
