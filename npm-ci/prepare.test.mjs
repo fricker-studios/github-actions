@@ -44,3 +44,15 @@ test('reject path escape and output injection', t => {
   assert.throws(() => prepare({...args, directory: '..'}));
   assert.throws(() => prepare({...args, epoch: 'v1\nevil=1'}));
 });
+
+test('prune keeps locked SHA-512 content and removes obsolete payloads', async t => {
+  const {prune} = await import('./prune.mjs');
+  const {args} = fixture(t);
+  const cache = join(args.workspace, 'cache');
+  const digest = Buffer.from('YWJjZA==', 'base64').toString('hex');
+  const dir = join(cache, '_cacache/content-v2/sha512', digest.slice(0, 2), digest.slice(2, 4));
+  mkdirSync(dir, {recursive: true});
+  writeFileSync(join(dir, digest.slice(4)), 'keep');
+  writeFileSync(join(dir, 'old-payload'), 'remove');
+  assert.deepEqual(prune(cache, join(args.workspace, 'frontend/package-lock.json')), {removed: 1, bytes: 6});
+});

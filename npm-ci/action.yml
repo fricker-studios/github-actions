@@ -62,12 +62,21 @@ runs:
         echo "seconds=$((SECONDS-start))" >> "$GITHUB_OUTPUT"
         if [ "$status" -ne 0 ]; then exit "$status"; fi
         node -e 'const fs=require("node:fs"),c=require("node:crypto");if(c.createHash("sha256").update(fs.readFileSync(process.env.LOCK_PATH)).digest("hex")!==process.env.LOCK_HASH)throw Error("Install modified package-lock.json")'
+    - id: prune
+      if: steps.restore.outputs.cache-hit != 'true'
+      continue-on-error: true
+      shell: bash
+      env:
+        LOCK_PATH: ${{ steps.prepare.outputs.lockPath }}
+      run: |
+        node "$GITHUB_ACTION_PATH/prune.mjs"
+        npm cache verify --no-update-notifier
     # Save before lint/test failures or cancellation can discard a good install.
     # Forks and pull_request_target never write; regular PRs write only their
     # signed PR scope. The cache backend MUST enforce repository and ref scopes.
     - id: save
       if: >-
-        steps.restore.outputs.cache-hit != 'true' &&
+        steps.restore.outputs.cache-hit != 'true' && steps.prune.outcome == 'success' &&
         (github.event_name == 'push' || github.event_name == 'workflow_dispatch' ||
         (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository))
       uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
@@ -93,6 +102,7 @@ runs:
         MATCHED_KEY: ${{ steps.restore.outputs.cache-matched-key }}
         RESTORE_OUTCOME: ${{ steps.restore.outcome }}
         INSTALL_OUTCOME: ${{ steps.install.outcome }}
+        PRUNE_OUTCOME: ${{ steps.prune.outcome }}
         SAVE_OUTCOME: ${{ steps.save.outcome }}
         ARCHIVE_PRESENT: ${{ steps.verify-save.outputs.cache-hit }}
         INSTALL_SECONDS: ${{ steps.install.outputs.seconds }}
@@ -104,6 +114,7 @@ runs:
           echo '### npm dependency cache'
           echo "- Exact hit: ${EXACT_HIT:-false}; matched key: ${MATCHED_KEY:-none}"
           echo "- Restore step: $RESTORE_OUTCOME; install: $INSTALL_OUTCOME (${INSTALL_SECONDS:-unknown}s)"
+          echo "- Cache pruning: $PRUNE_OUTCOME"
           echo "- Save step: $SAVE_OUTCOME; archive confirmed after save: ${ARCHIVE_PRESENT:-not checked}"
           if [ -d "$NPM_CONFIG_CACHE/_cacache" ]; then
             echo "- Local tarball cache: $(du -sk "$NPM_CONFIG_CACHE/_cacache" | cut -f1) KiB"

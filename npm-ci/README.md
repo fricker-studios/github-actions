@@ -45,7 +45,11 @@ A successful install saves immediately, before lint/tests. Failed installs
 never save. Two jobs missing the same key can both install; cache reservation
 selects the writer, and a losing reservation is harmless. This avoids unsafe
 shared writes but does not deduplicate the first simultaneous cold downloads.
-Exact hits are immutable; bump `cache-epoch` if an archive needs replacing.
+Before a new snapshot is saved, obsolete content not referenced by the current
+lockfile is removed and `npm cache verify` garbage-collects stale indexes. This
+prevents fallback archives carrying every historical package version forever.
+Pruning runs only after this job's npm process exits; a pruning failure warns
+and skips saving. Exact hits are immutable; bump `cache-epoch` if an archive needs replacing.
 There is deliberately no fallback to the old setup-node namespace: the new
 policy starts with a measured cold seed and its own compatibility partition.
 
