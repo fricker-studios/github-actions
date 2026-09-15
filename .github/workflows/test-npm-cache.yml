@@ -50,3 +50,32 @@ jobs:
       - name: Assert install failure was preserved
         if: steps.failing.outcome != 'failure'
         run: exit 1
+  cache-unavailable:
+    runs-on: ubuntu-latest
+    env:
+      # Closed loopback port: fail cache transport without disrupting a service.
+      ACTIONS_RESULTS_URL: http://127.0.0.1:9/
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Registry remains usable with cache transport unavailable
+        uses: ./npm-ci
+        with:
+          node-version-file: npm-ci/fixture/.nvmrc
+          working-directory: npm-ci/fixture
+          install-command: npm --prefix npm-ci/fixture ci --no-audit --no-fund
+      - name: Discard local cache to test both sources unavailable
+        run: |
+          case "$NPM_CONFIG_CACHE" in "$RUNNER_TEMP"/npm-public-*) rm -rf -- "$NPM_CONFIG_CACHE";; *) exit 1;; esac
+      - name: No cache and no registry must fail
+        id: unavailable
+        continue-on-error: true
+        uses: ./npm-ci
+        with:
+          node-version-file: npm-ci/fixture/.nvmrc
+          working-directory: npm-ci/fixture
+          install-command: npm --prefix npm-ci/fixture ci --offline --no-audit --no-fund
+      - name: Assert unavailable dependencies fail
+        if: steps.unavailable.outcome != 'failure'
+        run: exit 1
