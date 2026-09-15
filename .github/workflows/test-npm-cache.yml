@@ -52,13 +52,16 @@ jobs:
         run: exit 1
   cache-unavailable:
     runs-on: ubuntu-latest
-    env:
-      # Closed loopback port: fail cache transport without disrupting a service.
-      ACTIONS_RESULTS_URL: http://127.0.0.1:9/
     steps:
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
+      - name: Block only this disposable runner's cache endpoint
+        run: |
+          cache_host=$(node -e 'process.stdout.write(new URL(process.env.ACTIONS_RESULTS_URL).hostname)')
+          # The runner injects its runtime URL into action processes, overriding
+          # workflow env. DNS blocking exercises the real transport instead.
+          echo "127.0.0.1 $cache_host" | sudo tee -a /etc/hosts
       - name: Registry remains usable with cache transport unavailable
         uses: ./npm-ci
         with:
