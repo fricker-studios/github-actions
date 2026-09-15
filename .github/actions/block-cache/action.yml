@@ -1,0 +1,5 @@
+name: Block cache endpoint for outage test
+description: Disposable GitHub-hosted test runner only; caller must restore /etc/hosts in an always step.
+runs:
+  using: node24
+  main: index.cjs
