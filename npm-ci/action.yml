@@ -1,0 +1,122 @@
+name: Public npm CI with reusable tarball cache
+description: Restore same-project npm tarballs across lockfile changes and save immediately after a successful install.
+inputs:
+  node-version-file:
+    description: Node version file, relative to the checkout root
+    required: true
+  working-directory:
+    description: Directory containing a public npm package-lock.json
+    default: '.'
+  install-command:
+    description: Trusted repository command run from checkout root; must use npm ci and must not change the lockfile
+    default: npm ci --no-audit --no-fund
+  cache-epoch:
+    description: Bump to invalidate all caches for this caller
+    default: v1
+outputs:
+  cache-hit:
+    description: True only for an exact lockfile cache hit
+    value: ${{ steps.restore.outputs.cache-hit }}
+  cache-key:
+    description: Primary key used for this installation
+    value: ${{ steps.prepare.outputs.key }}
+runs:
+  using: composite
+  steps:
+    - name: Reject privileged PR contexts
+      if: github.event_name == 'pull_request_target'
+      shell: bash
+      run: |
+        echo "::error::Run untrusted PR code in pull_request on an isolated runner without secrets."
+        exit 1
+    - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+      with:
+        node-version-file: ${{ inputs.node-version-file }}
+        package-manager-cache: false
+    - id: prepare
+      shell: bash
+      env:
+        NPM_PROJECT: ${{ inputs.working-directory }}
+        CACHE_EPOCH: ${{ inputs.cache-epoch }}
+      run: node "$GITHUB_ACTION_PATH/prepare.mjs"
+    - id: restore
+      uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
+      continue-on-error: true
+      env:
+        SEGMENT_DOWNLOAD_TIMEOUT_MINS: '2'
+      with:
+        path: ${{ steps.prepare.outputs.cache }}/_cacache
+        key: ${{ steps.prepare.outputs.key }}
+        restore-keys: ${{ steps.prepare.outputs.prefix }}
+    - id: install
+      shell: bash
+      env:
+        INSTALL_COMMAND: ${{ inputs.install-command }}
+        LOCK_PATH: ${{ steps.prepare.outputs.lockPath }}
+        LOCK_HASH: ${{ steps.prepare.outputs.lockHash }}
+        NPM_CONFIG_LOGLEVEL: http
+      run: |
+        start=$SECONDS
+        status=0
+        bash --noprofile --norc -eo pipefail -c "$INSTALL_COMMAND" || status=$?
+        echo "seconds=$((SECONDS-start))" >> "$GITHUB_OUTPUT"
+        if [ "$status" -ne 0 ]; then exit "$status"; fi
+        node -e 'const fs=require("node:fs"),c=require("node:crypto");if(c.createHash("sha256").update(fs.readFileSync(process.env.LOCK_PATH)).digest("hex")!==process.env.LOCK_HASH)throw Error("Install modified package-lock.json")'
+    - id: prune
+      if: steps.restore.outputs.cache-hit != 'true'
+      continue-on-error: true
+      shell: bash
+      env:
+        LOCK_PATH: ${{ steps.prepare.outputs.lockPath }}
+      run: |
+        node "$GITHUB_ACTION_PATH/prune.mjs"
+        npm cache verify --no-update-notifier
+    # Save before lint/test failures or cancellation can discard a good install.
+    # Forks and pull_request_target never write; regular PRs write only their
+    # signed PR scope. The cache backend MUST enforce repository and ref scopes.
+    - id: save
+      if: >-
+        steps.restore.outputs.cache-hit != 'true' && steps.prune.outcome == 'success' &&
+        (github.event_name == 'push' || github.event_name == 'workflow_dispatch' ||
+        (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository))
+      uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
+      continue-on-error: true
+      with:
+        path: ${{ steps.prepare.outputs.cache }}/_cacache
+        key: ${{ steps.prepare.outputs.key }}
+    # cache/save can log a warning and still exit zero. Check persistence
+    # explicitly so summaries do not misreport a failed save as successful.
+    - id: verify-save
+      if: steps.save.outcome == 'success'
+      uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
+      continue-on-error: true
+      with:
+        path: ${{ steps.prepare.outputs.cache }}/_cacache
+        key: ${{ steps.prepare.outputs.key }}
+        lookup-only: true
+    - name: Cache summary
+      if: always()
+      shell: bash
+      env:
+        EXACT_HIT: ${{ steps.restore.outputs.cache-hit }}
+        MATCHED_KEY: ${{ steps.restore.outputs.cache-matched-key }}
+        RESTORE_OUTCOME: ${{ steps.restore.outcome }}
+        INSTALL_OUTCOME: ${{ steps.install.outcome }}
+        PRUNE_OUTCOME: ${{ steps.prune.outcome }}
+        SAVE_OUTCOME: ${{ steps.save.outcome }}
+        ARCHIVE_PRESENT: ${{ steps.verify-save.outputs.cache-hit }}
+        INSTALL_SECONDS: ${{ steps.install.outputs.seconds }}
+      run: |
+        if [ "$SAVE_OUTCOME" = success ] && [ "$ARCHIVE_PRESENT" != true ]; then
+          echo "::warning::npm cache archive was not confirmed after save; inspect cache transport logs."
+        fi
+        {
+          echo '### npm dependency cache'
+          echo "- Exact hit: ${EXACT_HIT:-false}; matched key: ${MATCHED_KEY:-none}"
+          echo "- Restore step: $RESTORE_OUTCOME; install: $INSTALL_OUTCOME (${INSTALL_SECONDS:-unknown}s)"
+          echo "- Cache pruning: $PRUNE_OUTCOME"
+          echo "- Save step: $SAVE_OUTCOME; archive confirmed after save: ${ARCHIVE_PRESENT:-not checked}"
+          if [ -d "$NPM_CONFIG_CACHE/_cacache" ]; then
+            echo "- Local tarball cache: $(du -sk "$NPM_CONFIG_CACHE/_cacache" | cut -f1) KiB"
+          fi
+        } >> "$GITHUB_STEP_SUMMARY"
