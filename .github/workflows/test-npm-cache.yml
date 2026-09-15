@@ -1,0 +1,29 @@
+name: Test npm cache action
+on:
+  pull_request:
+    paths: ['npm-ci/**', '.github/workflows/test-npm-cache.yml']
+  push:
+    branches: [main]
+    paths: ['npm-ci/**', '.github/workflows/test-npm-cache.yml']
+permissions:
+  contents: read
+jobs:
+  cache:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        lane: [1, 2]
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: ./npm-ci
+        with:
+          node-version-file: npm-ci/fixture/.nvmrc
+          working-directory: npm-ci/fixture
+          install-command: npm --prefix npm-ci/fixture ci --no-audit --no-fund
+      - run: node --test npm-ci/prepare.test.mjs
+      - name: Offline reinstall and dependency smoke test
+        run: |
+          npm --prefix npm-ci/fixture ci --offline --no-audit --no-fund
+          node -e "if (!require('./npm-ci/fixture/node_modules/is-number')(42)) process.exit(1)"
