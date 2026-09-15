@@ -82,5 +82,5 @@ jobs:
         if: always()
         run: |
           if [ -f "$RUNNER_TEMP/cache-test-original-hosts" ]; then
-            sudo tee /etc/hosts < "$RUNNER_TEMP/cache-test-original-hosts" > /dev/null
+            sudo cp -- "$RUNNER_TEMP/cache-test-original-hosts" /etc/hosts
           fi
