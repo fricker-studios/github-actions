@@ -1,10 +1,43 @@
 name: Build Multiarch Image
 
+# Builds linux/arm64 and linux/amd64 natively, in parallel, on the two
+# ARC scale sets of the ci cluster, then stitches the two per-arch images
+# into one multi-arch index with `docker buildx imagetools create`.
+#
+# Runners: ARC scale sets match `runs-on` on the SCALE-SET NAME ONLY —
+# label lists such as `[self-hosted, ARM64]` never match one, which is why
+# this workflow could not run between 2026-02 and 2026-10. The names are
+# inputs with the fleet's defaults (`arm_runner`, `amd_runner`), so a repo
+# can point a build elsewhere (another pool, or `ubuntu-24.04-arm`) without
+# a fork of this file.
+#
+# Registry: defaults to the lab's zot (`registry.lab.alexfricker.com`).
+# An `image_name` with no registry host (`devpi`, `alexfricker/website`)
+# is pushed under that registry; one that already names a host
+# (`docker.io/alexfricker/etl-api`, `ghcr.io/...`) is used as given — the
+# same rule docker itself applies to the first path component.
+#
+# Build cache: `type=registry` on the image's own repository, one tag per
+# architecture (`<image>:buildcache-arm64`, `<image>:buildcache-amd64`),
+# so the two parallel jobs never overwrite each other's export. zot needs
+# `image-manifest=true,oci-mediatypes=true` on the export (the form
+# fricker-studios/neume's ci.yaml uses). Not `type=gha`: through the LAN
+# actions-cache every blob would round-trip MinIO twice; the registry
+# cache is one hop. The cache is only exported when the build pushes.
+#
+# Outputs stay (`image_name`, `image_tag`, `image_fullname`, `digest`) so
+# update-gitops-manifest.yml and the existing callers keep working.
+# `digest` is the multi-arch index's digest.
+#
+# Validation: selftest-build-image.yml builds a tiny image through this
+# workflow and runs it on BOTH pools, so "multi-arch" is proven by
+# execution on each architecture, not by the manifest's say-so.
+
 on:
   workflow_call:
     inputs:
       image_name:
-        description: 'Name of the Docker image to build'
+        description: 'Image to build. Without a registry host it lands under `registry`; with one (docker.io/..., ghcr.io/...) it is used as given'
         required: true
         type: string
       dockerfile_path:
@@ -52,18 +85,28 @@ on:
         required: false
         type: string
         default: ''
+      arm_runner:
+        description: 'ARC scale set (runs-on) for the linux/arm64 build'
+        required: false
+        type: string
+        default: 'arc-runner-fricker-arm64'
+      amd_runner:
+        description: 'ARC scale set (runs-on) for the linux/amd64 build and the manifest step'
+        required: false
+        type: string
+        default: 'arc-runner-fricker-amd64'
       push:
-        description: 'Whether to push the image to registry'
+        description: 'Whether to push the image (and its build cache) to the registry'
         required: false
         type: boolean
         default: false
       registry:
-        description: 'Docker registry URL (e.g., ghcr.io, registry.example.com). Defaults to Docker Hub if not specified'
+        description: 'Registry to log in to and to prefix a host-less image_name with. Empty means Docker Hub and no login'
         required: false
         type: string
-        default: ''
+        default: 'registry.lab.alexfricker.com'
       tags:
-        description: 'Additional tags for the image (newline-separated)'
+        description: 'Additional tags for the image (newline-separated); the commit sha is always tagged'
         required: false
         type: string
         default: ''
@@ -99,59 +142,201 @@ on:
         required: false
     outputs:
       image_name:
-        description: 'Image name without tag'
+        description: 'Image name without tag, registry included'
         value: ${{ jobs.create-manifest.outputs.image_name }}
       image_tag:
-        description: 'Short image tag (e.g., commit-sha or first custom tag)'
+        description: 'Short image tag (first custom tag, else the commit sha)'
         value: ${{ jobs.create-manifest.outputs.image_tag }}
       image_fullname:
         description: 'Full image name with tag (image_name:image_tag)'
         value: ${{ jobs.create-manifest.outputs.image_fullname }}
       digest:
-        description: 'Image digest'
+        description: 'Digest of the multi-arch index (empty when push is false)'
         value: ${{ jobs.create-manifest.outputs.digest }}
 
 jobs:
-  build-arm:
-    uses: fricker-studios/github-actions/.github/workflows/build-arm-image.yml@main
-    with:
-      image_name: ${{ inputs.image_name }}
-      dockerfile_path: ${{ inputs.arm_dockerfile_path != '' && inputs.arm_dockerfile_path || inputs.dockerfile_path }}
-      context: ${{ inputs.arm_context != '' && inputs.arm_context || inputs.context }}
-      build_args: ${{ inputs.arm_build_args != '' && inputs.arm_build_args || inputs.build_args }}
-      push: ${{ inputs.push }}
-      registry: ${{ inputs.registry }}
-      tags: ${{ inputs.tags }}
-      download_artifacts: ${{ inputs.download_artifacts }}
-      artifact_name: ${{ inputs.artifact_name }}
-      artifact_path: ${{ inputs.artifact_path }}
-    secrets:
-      registry_username: ${{ secrets.registry_username }}
-      registry_password: ${{ secrets.registry_password }}
+  build:
+    name: Build ${{ matrix.arch }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            platform: linux/arm64
+            runner: ${{ inputs.arm_runner }}
+            dockerfile: ${{ inputs.arm_dockerfile_path != '' && inputs.arm_dockerfile_path || inputs.dockerfile_path }}
+            context: ${{ inputs.arm_context != '' && inputs.arm_context || inputs.context }}
+            build_args: ${{ inputs.arm_build_args != '' && inputs.arm_build_args || inputs.build_args }}
+          - arch: amd64
+            platform: linux/amd64
+            runner: ${{ inputs.amd_runner }}
+            dockerfile: ${{ inputs.amd_dockerfile_path != '' && inputs.amd_dockerfile_path || inputs.dockerfile_path }}
+            context: ${{ inputs.amd_context != '' && inputs.amd_context || inputs.context }}
+            build_args: ${{ inputs.amd_build_args != '' && inputs.amd_build_args || inputs.build_args }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
 
-  build-amd:
-    uses: fricker-studios/github-actions/.github/workflows/build-amd-image.yml@main
-    with:
-      image_name: ${{ inputs.image_name }}
-      dockerfile_path: ${{ inputs.amd_dockerfile_path != '' && inputs.amd_dockerfile_path || inputs.dockerfile_path }}
-      context: ${{ inputs.amd_context != '' && inputs.amd_context || inputs.context }}
-      build_args: ${{ inputs.amd_build_args != '' && inputs.amd_build_args || inputs.build_args }}
-      push: ${{ inputs.push }}
-      registry: ${{ inputs.registry }}
-      tags: ${{ inputs.tags }}
-      download_artifacts: ${{ inputs.download_artifacts }}
-      artifact_name: ${{ inputs.artifact_name }}
-      artifact_path: ${{ inputs.artifact_path }}
-      sentry_dsn_var_name: ${{ inputs.sentry_dsn_var_name }}
-    secrets:
-      registry_username: ${{ secrets.registry_username }}
-      registry_password: ${{ secrets.registry_password }}
-      sentry_dsn: ${{ secrets.sentry_dsn }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download artifacts
+        if: inputs.download_artifacts == true
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.artifact_name }}
+          path: ${{ inputs.artifact_path }}
+
+      - name: Verify artifacts
+        if: inputs.download_artifacts == true
+        env:
+          ARTIFACT_PATH: ${{ inputs.artifact_path }}
+        run: |
+          echo "✅ Artifacts downloaded to: $ARTIFACT_PATH"
+          echo ""
+          echo "=== Workspace structure ==="
+          ls -la
+          echo ""
+          if [ -d "frontend" ]; then
+            echo "=== frontend/ contents ==="
+            ls -la frontend/
+            echo ""
+            if [ -d "frontend/dist" ]; then
+              echo "=== frontend/dist/ contents (first 20 items) ==="
+              # shellcheck disable=SC2012
+              ls -la frontend/dist/ | head -20
+            fi
+          fi
+          if [ -d "staticfiles" ]; then
+            echo ""
+            echo "=== staticfiles/ contents (first 20 items) ==="
+            # shellcheck disable=SC2012
+            ls -la staticfiles/ | head -20
+          fi
+
+      # The image reference the tags are built from: `registry/image_name`
+      # unless image_name already starts with a registry host. Docker's
+      # rule — the first path component is a host when it contains a `.`
+      # or a `:`, or is `localhost`.
+      - name: Resolve image reference
+        id: ref
+        env:
+          IMAGE_NAME: ${{ inputs.image_name }}
+          REGISTRY: ${{ inputs.registry }}
+        run: |
+          set -euo pipefail
+          has_host=false
+          if [[ "$IMAGE_NAME" == */* ]]; then
+            first="${IMAGE_NAME%%/*}"
+            if [[ "$first" == *.* || "$first" == *:* || "$first" == localhost ]]; then
+              has_host=true
+            fi
+          fi
+          if [ -n "$REGISTRY" ] && [ "$has_host" = false ]; then
+            ref="$REGISTRY/$IMAGE_NAME"
+          else
+            ref="$IMAGE_NAME"
+          fi
+          echo "ref=$ref" >> "$GITHUB_OUTPUT"
+          echo "Image reference: $ref"
+
+      - name: Login to Container Registry
+        if: inputs.push == true && inputs.registry != ''
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ inputs.registry }}
+          username: ${{ secrets.registry_username }}
+          password: ${{ secrets.registry_password }}
+
+      # A docker-container builder: the default docker driver cannot
+      # export a registry cache. Runs inside the pod's dind sidecar.
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Prepare build args
+        id: prepare-args
+        env:
+          BUILD_ARGS: ${{ matrix.build_args }}
+          SENTRY_DSN: ${{ secrets.sentry_dsn }}
+          SENTRY_DSN_VAR_NAME: ${{ inputs.sentry_dsn_var_name }}
+        run: |
+          set -euo pipefail
+          # Inject the Sentry DSN if the secret and a variable name are both set:
+          # replace an existing VAR= line, else append one.
+          if [ -n "$SENTRY_DSN" ] && [ -n "$SENTRY_DSN_VAR_NAME" ]; then
+            if printf '%s\n' "$BUILD_ARGS" | grep -q "^${SENTRY_DSN_VAR_NAME}="; then
+              BUILD_ARGS=$(printf '%s\n' "$BUILD_ARGS" | sed "s|^${SENTRY_DSN_VAR_NAME}=.*|${SENTRY_DSN_VAR_NAME}=${SENTRY_DSN}|")
+            else
+              BUILD_ARGS="${BUILD_ARGS}${BUILD_ARGS:+$'\n'}${SENTRY_DSN_VAR_NAME}=${SENTRY_DSN}"
+            fi
+          fi
+          {
+            echo "build_args<<EOF"
+            printf '%s\n' "$BUILD_ARGS"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Prepare tags
+        id: prepare-tags
+        env:
+          REF: ${{ steps.ref.outputs.ref }}
+          ARCH: ${{ matrix.arch }}
+          EXTRA_TAGS: ${{ inputs.tags }}
+        run: |
+          set -euo pipefail
+          TAGS="$REF:$GITHUB_SHA-$ARCH"
+          while IFS= read -r tag; do
+            tag="${tag//[[:space:]]/}"
+            if [ -n "$tag" ]; then
+              TAGS="$TAGS,$REF:$tag-$ARCH"
+            fi
+          done <<< "$EXTRA_TAGS"
+          echo "tags=$TAGS" >> "$GITHUB_OUTPUT"
+          echo "Built tags: $TAGS"
+
+      - name: Build and push ${{ matrix.arch }} image
+        id: build
+        uses: docker/build-push-action@v5
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
+          platforms: ${{ matrix.platform }}
+          push: ${{ inputs.push }}
+          tags: ${{ steps.prepare-tags.outputs.tags }}
+          build-args: ${{ steps.prepare-args.outputs.build_args }}
+          # A plain per-arch manifest, so the index created below lists
+          # exactly one entry per platform.
+          provenance: false
+          cache-from: type=registry,ref=${{ steps.ref.outputs.ref }}:buildcache-${{ matrix.arch }}
+          cache-to: ${{ inputs.push && format('type=registry,ref={0}:buildcache-{1},mode=max,image-manifest=true,oci-mediatypes=true', steps.ref.outputs.ref, matrix.arch) || '' }}
+
+      - name: Output image information
+        env:
+          REF: ${{ steps.ref.outputs.ref }}
+          ARCH: ${{ matrix.arch }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+          PUSH: ${{ inputs.push }}
+          REGISTRY: ${{ inputs.registry }}
+        run: |
+          echo "✅ $ARCH image built: $REF:$GITHUB_SHA-$ARCH ($DIGEST)"
+          {
+            echo "## 🏗️ $ARCH image build complete"
+            echo ""
+            echo "| Property | Value |"
+            echo "| --- | --- |"
+            echo "| Architecture | $ARCH |"
+            echo "| Primary Tag | \`$REF:$GITHUB_SHA-$ARCH\` |"
+            echo "| Digest | \`$DIGEST\` |"
+            echo "| Pushed | $PUSH |"
+            echo "| Registry | ${REGISTRY:-docker.io} |"
+            echo "| Runner | $RUNNER_NAME |"
+            echo ""
+          } >> "$GITHUB_STEP_SUMMARY"
 
   create-manifest:
     name: Create and Push Multiarch Manifest
-    needs: [build-arm, build-amd]
-    runs-on: [self-hosted]
+    needs: build
+    runs-on: ${{ inputs.amd_runner }}
     timeout-minutes: 10
     outputs:
       image_name: ${{ steps.output.outputs.image_name }}
@@ -160,6 +345,27 @@ jobs:
       digest: ${{ steps.manifest.outputs.digest }}
 
     steps:
+      - name: Resolve image reference
+        id: ref
+        env:
+          IMAGE_NAME: ${{ inputs.image_name }}
+          REGISTRY: ${{ inputs.registry }}
+        run: |
+          set -euo pipefail
+          has_host=false
+          if [[ "$IMAGE_NAME" == */* ]]; then
+            first="${IMAGE_NAME%%/*}"
+            if [[ "$first" == *.* || "$first" == *:* || "$first" == localhost ]]; then
+              has_host=true
+            fi
+          fi
+          if [ -n "$REGISTRY" ] && [ "$has_host" = false ]; then
+            ref="$REGISTRY/$IMAGE_NAME"
+          else
+            ref="$IMAGE_NAME"
+          fi
+          echo "ref=$ref" >> "$GITHUB_OUTPUT"
+
       - name: Login to Docker Registry
         if: inputs.push == true && inputs.registry != ''
         uses: docker/login-action@v3
@@ -170,157 +376,97 @@ jobs:
 
       - name: Prepare manifest tags
         id: prepare-tags
+        env:
+          REF: ${{ steps.ref.outputs.ref }}
+          EXTRA_TAGS: ${{ inputs.tags }}
         run: |
-          MANIFEST_TAGS="${{ inputs.image_name }}:${{ github.sha }}"
-          if [ -n "${{ inputs.tags }}" ]; then
-            while IFS= read -r tag; do
-              if [ -n "$tag" ]; then
-                MANIFEST_TAGS="$MANIFEST_TAGS ${{ inputs.image_name }}:$tag"
-              fi
-            done <<< "${{ inputs.tags }}"
-          fi
-          echo "manifest_tags=$MANIFEST_TAGS" >> $GITHUB_OUTPUT
-          echo "Manifest tags: $MANIFEST_TAGS"
+          set -euo pipefail
+          ARGS="-t $REF:$GITHUB_SHA"
+          while IFS= read -r tag; do
+            tag="${tag//[[:space:]]/}"
+            if [ -n "$tag" ]; then
+              ARGS="$ARGS -t $REF:$tag"
+            fi
+          done <<< "$EXTRA_TAGS"
+          echo "tag_args=$ARGS" >> "$GITHUB_OUTPUT"
+          echo "Manifest tags: $ARGS"
 
+      # One index, every tag at once; `imagetools create` reads the two
+      # per-arch manifests from the registry and writes an OCI index
+      # (the form zot stores as-is). Then the done condition: the index
+      # must list both platforms, or this job fails.
       - name: Create and push multiarch manifest
         id: manifest
         if: inputs.push == true
         timeout-minutes: 8
+        env:
+          REF: ${{ steps.ref.outputs.ref }}
+          TAG_ARGS: ${{ steps.prepare-tags.outputs.tag_args }}
         run: |
-          echo "Using ARM image: ${{ needs.build-arm.outputs.image_fullname }}"
-          echo "Using AMD image: ${{ needs.build-amd.outputs.image_fullname }}"
-          echo ""
+          set -euo pipefail
+          echo "Using ARM image: $REF:$GITHUB_SHA-arm64"
+          echo "Using AMD image: $REF:$GITHUB_SHA-amd64"
+          # shellcheck disable=SC2086  # TAG_ARGS is a space-separated `-t tag` list built above
+          docker buildx imagetools create $TAG_ARGS \
+            "$REF:$GITHUB_SHA-arm64" \
+            "$REF:$GITHUB_SHA-amd64"
 
-          # Create list of all tags to manifest
-          TAGS=("${{ inputs.image_name }}:${{ github.sha }}")
-          if [ -n "${{ inputs.tags }}" ]; then
-            while IFS= read -r tag; do
-              if [ -n "$tag" ]; then
-                TAGS+=("${{ inputs.image_name }}:$tag")
-              fi
-            done <<< "${{ inputs.tags }}"
-          fi
-
-          # Create and push manifest for each tag
-          DIGEST=""
-          for TAG in "${TAGS[@]}"; do
-            echo "Creating manifest for: $TAG"
-            # Remove existing manifest if it exists to avoid stale references
-            docker manifest rm "$TAG" 2>/dev/null || true
-            docker manifest create "$TAG" \
-              ${{ needs.build-arm.outputs.image_fullname }} \
-              ${{ needs.build-amd.outputs.image_fullname }}
-            docker manifest push "$TAG"
-
-            # Get the digest from the first tag
-            if [ -z "$DIGEST" ]; then
-              if command -v jq &> /dev/null; then
-                DIGEST=$(docker manifest inspect "$TAG" | jq -r '.manifests[0].digest')
-              else
-                DIGEST=$(docker manifest inspect "$TAG" | grep -oP '"digest":\s*"\K[^"]+' | head -1)
-              fi
-            fi
-            echo "✅ Pushed manifest: $TAG"
-          done
-
-          echo "digest=$DIGEST" >> $GITHUB_OUTPUT
-          echo "✅ All multiarch manifests created and pushed successfully"
-          echo "Primary tag: ${{ inputs.image_name }}:${{ github.sha }}"
-          echo "Manifest digest: $DIGEST"
+          docker buildx imagetools inspect "$REF:$GITHUB_SHA" | tee "$RUNNER_TEMP/inspect.txt"
+          grep -q 'Platform: *linux/arm64' "$RUNNER_TEMP/inspect.txt"
+          grep -q 'Platform: *linux/amd64' "$RUNNER_TEMP/inspect.txt"
+          DIGEST=$(docker buildx imagetools inspect "$REF:$GITHUB_SHA" --format '{{.Manifest.Digest}}')
+          echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
+          echo "✅ Multiarch index pushed: $REF:$GITHUB_SHA ($DIGEST)"
 
       - name: Create local manifest (no push)
         if: inputs.push == false
+        env:
+          REF: ${{ steps.ref.outputs.ref }}
         run: |
           echo "⚠️  Manifest creation skipped (push=false)"
-          echo "Would create manifest from:"
-          echo "  - ARM: ${{ needs.build-arm.outputs.image_fullname }}"
-          echo "  - AMD: ${{ needs.build-amd.outputs.image_fullname }}"
+          echo "Would create an index from:"
+          echo "  - ARM: $REF:$GITHUB_SHA-arm64"
+          echo "  - AMD: $REF:$GITHUB_SHA-amd64"
 
       - name: Output image information
         id: output
+        env:
+          REF: ${{ steps.ref.outputs.ref }}
+          EXTRA_TAGS: ${{ inputs.tags }}
+          DIGEST: ${{ steps.manifest.outputs.digest }}
+          PUSH: ${{ inputs.push }}
+          REGISTRY: ${{ inputs.registry }}
         run: |
-          # Determine the short tag (first custom tag if provided, otherwise commit sha)
-          SHORT_TAG="${{ github.sha }}"
-          if [ -n "${{ inputs.tags }}" ]; then
-            SHORT_TAG=$(echo "${{ inputs.tags }}" | head -n 1 | tr -d '[:space:]')
+          set -euo pipefail
+          # The short tag: the first custom tag if there is one, else the commit sha.
+          SHORT_TAG="$GITHUB_SHA"
+          first_tag=$(printf '%s\n' "$EXTRA_TAGS" | sed '/^[[:space:]]*$/d' | head -n 1 | tr -d '[:space:]')
+          if [ -n "$first_tag" ]; then
+            SHORT_TAG="$first_tag"
           fi
-          
-          echo "image_name=${{ inputs.image_name }}" >> $GITHUB_OUTPUT
-          echo "image_tag=$SHORT_TAG" >> $GITHUB_OUTPUT
-          echo "image_fullname=${{ inputs.image_name }}:$SHORT_TAG" >> $GITHUB_OUTPUT
-          echo "✅ Multiarch workflow completed"
-          echo "Image Name: ${{ inputs.image_name }}"
-          echo "Image Tag: $SHORT_TAG"
-          echo "Full Image: ${{ inputs.image_name }}:$SHORT_TAG"
-          echo "ARM digest: ${{ needs.build-arm.outputs.digest }}"
-          echo "AMD digest: ${{ needs.build-amd.outputs.digest }}"
-          
-          # Add comprehensive summary to GitHub Step Summary
-          echo "# 🎉 Multiarch Image Build Complete" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          
-          echo "## 📦 Manifest Information" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
-          echo "| --- | --- |" >> $GITHUB_STEP_SUMMARY
-          echo "| Primary Tag | \`${{ inputs.image_name }}:${{ github.sha }}\` |" >> $GITHUB_STEP_SUMMARY
-          if [ -n "${{ steps.manifest.outputs.digest }}" ]; then
-            echo "| Manifest Digest | \`${{ steps.manifest.outputs.digest }}\` |" >> $GITHUB_STEP_SUMMARY
-          fi
-          echo "| Pushed | ${{ inputs.push }} |" >> $GITHUB_STEP_SUMMARY
-          if [ -n "${{ inputs.registry }}" ]; then
-            echo "| Registry | ${{ inputs.registry }} |" >> $GITHUB_STEP_SUMMARY
-          fi
-          echo "" >> $GITHUB_STEP_SUMMARY
-          
-          echo "## 🏗️ Architecture-Specific Images" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| Architecture | Image Tag | Digest |" >> $GITHUB_STEP_SUMMARY
-          echo "| --- | --- | --- |" >> $GITHUB_STEP_SUMMARY
-          echo "| ARM64 | \`${{ needs.build-arm.outputs.image_fullname }}\` | \`${{ needs.build-arm.outputs.digest }}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| AMD64 | \`${{ needs.build-amd.outputs.image_fullname }}\` | \`${{ needs.build-amd.outputs.digest }}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          
-          if [ -n "${{ inputs.tags }}" ]; then
-            echo "## 🏷️ All Tags Created" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "| Tag | Architectures |" >> $GITHUB_STEP_SUMMARY
-            echo "| --- | --- |" >> $GITHUB_STEP_SUMMARY
-            echo "| \`${{ inputs.image_name }}:${{ github.sha }}\` | arm64, amd64 |" >> $GITHUB_STEP_SUMMARY
-            while IFS= read -r tag; do
-              if [ -n "$tag" ]; then
-                echo "| \`${{ inputs.image_name }}:$tag\` | arm64, amd64 |" >> $GITHUB_STEP_SUMMARY
-              fi
-            done <<< "${{ inputs.tags }}"
-            echo "" >> $GITHUB_STEP_SUMMARY
-          fi
-          
-          if [ -n "${{ inputs.build_args }}" ] || [ -n "${{ inputs.arm_build_args }}" ] || [ -n "${{ inputs.amd_build_args }}" ]; then
-            echo "## ⚙️ Build Configuration" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            if [ -n "${{ inputs.build_args }}" ]; then
-              echo "**Common Build Args:**" >> $GITHUB_STEP_SUMMARY
-              echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
-              echo "${{ inputs.build_args }}" >> $GITHUB_STEP_SUMMARY
-              echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          {
+            echo "image_name=$REF"
+            echo "image_tag=$SHORT_TAG"
+            echo "image_fullname=$REF:$SHORT_TAG"
+          } >> "$GITHUB_OUTPUT"
+          echo "✅ Multiarch workflow completed: $REF:$SHORT_TAG"
+
+          {
+            echo "# 🎉 Multiarch Image Build Complete"
+            echo ""
+            echo "| Property | Value |"
+            echo "| --- | --- |"
+            echo "| Image | \`$REF:$SHORT_TAG\` |"
+            echo "| Primary Tag | \`$REF:$GITHUB_SHA\` |"
+            if [ -n "$DIGEST" ]; then
+              echo "| Index Digest | \`$DIGEST\` |"
             fi
-            if [ -n "${{ inputs.arm_build_args }}" ]; then
-              echo "**ARM-specific Build Args:**" >> $GITHUB_STEP_SUMMARY
-              echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
-              echo "${{ inputs.arm_build_args }}" >> $GITHUB_STEP_SUMMARY
-              echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+            echo "| Pushed | $PUSH |"
+            echo "| Registry | ${REGISTRY:-docker.io} |"
+            echo ""
+            if [ -f "$RUNNER_TEMP/inspect.txt" ]; then
+              echo '```'
+              cat "$RUNNER_TEMP/inspect.txt"
+              echo '```'
             fi
-            if [ -n "${{ inputs.amd_build_args }}" ]; then
-              echo "**AMD-specific Build Args:**" >> $GITHUB_STEP_SUMMARY
-              echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
-              echo "${{ inputs.amd_build_args }}" >> $GITHUB_STEP_SUMMARY
-              echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
-            fi
-          fi
-          
-          if [ "${{ inputs.push }}" == "false" ]; then
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "---" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "⚠️ **Note:** Images were built but not pushed (push=false)" >> $GITHUB_STEP_SUMMARY
-          fi
+          } >> "$GITHUB_STEP_SUMMARY"

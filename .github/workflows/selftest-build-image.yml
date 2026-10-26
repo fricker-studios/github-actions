@@ -1,0 +1,89 @@
+name: Self-test build-multiarch-image
+
+# This repo's own CI, and the fleet's `arm64-smoke` (homelab plan
+# docs/rack-spec/runbooks/ci-fleet-offload-plan.md §5.3): build
+# selftest/Dockerfile through build-multiarch-image.yml on the two ARC
+# pools, push it to the lab registry as `github-actions-selftest`, then
+# pull the resulting index on EACH pool and run it. The container prints
+# the machine it was built on; the job on the arm64 pool must see
+# `aarch64` and the one on the amd64 pool `x86_64`. "Multi-arch" is
+# proven by execution on each architecture, not by the manifest.
+#
+# Triggers: manual, and pushes to main that touch the build workflows.
+# Never pull_request: this repository is public, and fork code must not
+# reach the lab's runners or its registry credentials.
+#
+# Run it against a branch before merging a change to the build workflows:
+#   gh workflow run selftest-build-image.yml --ref <branch>
+
+on:
+  workflow_dispatch:
+    inputs:
+      arm_runner:
+        description: 'ARC scale set for the arm64 build and smoke'
+        required: false
+        default: arc-runner-fricker-arm64
+        type: string
+      amd_runner:
+        description: 'ARC scale set for the amd64 build, the manifest and the amd64 smoke'
+        required: false
+        default: arc-runner-fricker-amd64
+        type: string
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/build-multiarch-image.yml'
+      - '.github/workflows/build-arm-image.yml'
+      - '.github/workflows/build-amd-image.yml'
+      - '.github/workflows/selftest-build-image.yml'
+      - 'selftest/**'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    uses: ./.github/workflows/build-multiarch-image.yml
+    with:
+      image_name: github-actions-selftest
+      context: selftest
+      dockerfile_path: selftest/Dockerfile
+      push: true
+      tags: |
+        latest
+      arm_runner: ${{ inputs.arm_runner || 'arc-runner-fricker-arm64' }}
+      amd_runner: ${{ inputs.amd_runner || 'arc-runner-fricker-amd64' }}
+    secrets:
+      registry_username: ${{ secrets.REGISTRY_USERNAME }}
+      registry_password: ${{ secrets.REGISTRY_PASSWORD }}
+
+  smoke:
+    name: run the index on ${{ matrix.arch }}
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            runner: ${{ inputs.arm_runner || 'arc-runner-fricker-arm64' }}
+            machine: aarch64
+          - arch: amd64
+            runner: ${{ inputs.amd_runner || 'arc-runner-fricker-amd64' }}
+            machine: x86_64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 10
+    env:
+      IMAGE: ${{ needs.build.outputs.image_fullname }}
+      BY_DIGEST: ${{ needs.build.outputs.image_name }}@${{ needs.build.outputs.digest }}
+      WANT: ${{ matrix.machine }}
+    steps:
+      - name: pull the index and run the platform entry it resolves to
+        run: |
+          set -euo pipefail
+          echo "runner: $RUNNER_NAME ($(uname -m)), image: $IMAGE, index: $BY_DIGEST"
+          docker pull "$BY_DIGEST"
+          got=$(docker run --rm "$BY_DIGEST")
+          echo "container says it was built on: $got"
+          test "$got" = "$WANT"
+          test "$(uname -m)" = "$WANT"
+          docker buildx imagetools inspect "$IMAGE" | grep -E 'Name:|Platform:'
