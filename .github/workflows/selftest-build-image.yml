@@ -9,14 +9,21 @@ name: Self-test build-multiarch-image
 # `aarch64` and the one on the amd64 pool `x86_64`. "Multi-arch" is
 # proven by execution on each architecture, not by the manifest.
 #
-# Triggers: manual, and pushes to main that touch the build workflows.
-# Never pull_request: this repository is public, and fork code must not
-# reach the lab's runners or its registry credentials.
-#
-# Run it against a branch before merging a change to the build workflows:
-#   gh workflow run selftest-build-image.yml --ref <branch>
+# Triggers: pull requests and pushes to main that touch the build
+# workflows, and manual dispatch (which GitHub only offers for the copy
+# on the default branch). This repository is public: the pull_request
+# jobs are guarded so a fork's code never reaches the lab's runners or
+# its registry credentials (the same guard test-npm-cache.yml uses); a
+# fork PR therefore runs nothing here.
 
 on:
+  pull_request:
+    paths:
+      - '.github/workflows/build-multiarch-image.yml'
+      - '.github/workflows/build-arm-image.yml'
+      - '.github/workflows/build-amd-image.yml'
+      - '.github/workflows/selftest-build-image.yml'
+      - 'selftest/**'
   workflow_dispatch:
     inputs:
       arm_runner:
@@ -43,6 +50,8 @@ permissions:
 
 jobs:
   build:
+    # Fork code never enters the lab network.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     uses: ./.github/workflows/build-multiarch-image.yml
     with:
       image_name: github-actions-selftest
@@ -60,6 +69,7 @@ jobs:
   smoke:
     name: run the index on ${{ matrix.arch }}
     needs: build
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     strategy:
       fail-fast: false
       matrix:
