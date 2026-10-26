@@ -1,25 +1,39 @@
 # GitHub Actions - Reusable Workflows
 
-This repository contains reusable GitHub Actions workflows for building Docker images across different architectures using self-hosted runners.
+This repository contains reusable GitHub Actions workflows for building Docker images across different architectures on the fricker-studios CI fleet (ARC scale sets in the `ci` k3s cluster; see homelab's `docs/rack-spec/runbooks/ci-fleet-offload-plan.md`).
 
 ## Available Workflows
 
 ### 1. Build ARM Image (`build-arm-image.yml`)
-Builds a Docker image specifically for ARM64 architecture (linux/arm64) on self-hosted ARM64 runners.
+Builds a Docker image for linux/arm64, natively, on the `arc-runner-fricker-arm64` scale set (Raspberry Pi 4 boards). Tags are suffixed `-arm64`.
 
 ### 2. Build AMD Image (`build-amd-image.yml`)
-Builds a Docker image specifically for AMD64 architecture (linux/amd64) on self-hosted X64 runners.
+Builds a Docker image for linux/amd64, natively, on the `arc-runner-fricker-amd64` scale set. Tags are suffixed `-amd64`.
 
 ### 3. Build Multiarch Image (`build-multiarch-image.yml`)
-Builds ARM64 and AMD64 images in parallel using the ARM and AMD workflows, then creates a multiarch manifest combining both architectures.
+Builds both architectures in parallel (one job per scale set) and then creates one multi-arch index per tag with `docker buildx imagetools create`. The job fails unless the index lists both `linux/arm64` and `linux/amd64`.
+
+### Self-test (`selftest-build-image.yml`)
+This repo's own CI: builds `selftest/Dockerfile` through the multiarch workflow, pushes it to the lab registry as `github-actions-selftest`, then pulls the index on **each** pool and runs it (the container prints the machine it was built on). Run it against a branch before merging a change to the build workflows:
+
+```bash
+gh workflow run selftest-build-image.yml --ref <branch>
+```
 
 ## Prerequisites
 
-⚠️ **Important**: These workflows require self-hosted runners with the following labels:
-- **ARM64**: Self-hosted runners tagged with `ARM64` label for ARM64 builds
-- **X64**: Self-hosted runners tagged with `X64` label for AMD64 builds
+⚠️ **Runners are named, not labelled.** ARC scale sets match `runs-on` on the scale-set name only; a label list such as `[self-hosted, ARM64]` never matches one, which is why these workflows could not run between 2026-02 and 2026-10. The names are inputs with the fleet's defaults:
 
-Make sure your self-hosted runners have Docker installed and properly configured before using these workflows.
+| Input | Default | Used by |
+|-------|---------|---------|
+| `arm_runner` | `arc-runner-fricker-arm64` | the arm64 build (and arm64 smoke) |
+| `amd_runner` | `arc-runner-fricker-amd64` | the amd64 build and the manifest step |
+
+Both pools run docker-in-docker, so `docker build`/`buildx` work without further setup. Any other runner that has Docker and buildx works too (for example `ubuntu-24.04-arm` for the arm64 build when the fleet is down).
+
+**Registry.** `registry` defaults to the lab's zot, `registry.lab.alexfricker.com`. An `image_name` without a registry host (`devpi`, `alexfricker/website`) is pushed under that registry; one that already names a host (`docker.io/alexfricker/etl-api`, `ghcr.io/...`) is used as given — docker's own rule for the first path component. The org secrets `REGISTRY_USERNAME` / `REGISTRY_PASSWORD` are the lab registry's `pusher` account. To push to Docker Hub, pass `registry: ''` (no login) or `registry: docker.io` with Docker Hub credentials.
+
+**Build cache.** `type=registry` on the image's own repository, one tag per architecture (`<image>:buildcache-arm64`, `<image>:buildcache-amd64`) so the parallel jobs never overwrite each other's export, with the `image-manifest=true,oci-mediatypes=true` flags zot needs. The cache is exported only when `push: true`. Not `type=gha`: through the LAN actions-cache every blob would round-trip MinIO twice.
 
 ## Quick Start
 
@@ -57,9 +71,14 @@ All three workflows share the following common inputs:
 | `image_name` | Name of the Docker image to build (e.g., `myorg/myapp`) | Yes | - |
 | `dockerfile_path` | Path to the Dockerfile | No | `./Dockerfile` |
 | `context` | Build context path | No | `.` |
-| `build_args` | Build arguments (comma-separated KEY=VALUE pairs) | No | `''` |
-| `push` | Whether to push the image to registry | No | `false` |
-| `tags` | Additional tags for the image (newline-separated) | No | `''` |
+| `build_args` | Build arguments (newline-separated KEY=VALUE pairs) | No | `''` |
+| `push` | Whether to push the image (and its build cache) to the registry | No | `false` |
+| `registry` | Registry to log in to and to prefix a host-less `image_name` with; empty means Docker Hub and no login | No | `registry.lab.alexfricker.com` |
+| `tags` | Additional tags for the image (newline-separated); the commit sha is always tagged | No | `''` |
+| `arm_runner` | Scale set for the arm64 build (`build-arm-image.yml`, `build-multiarch-image.yml`) | No | `arc-runner-fricker-arm64` |
+| `amd_runner` | Scale set for the amd64 build and the manifest step (`build-amd-image.yml`, `build-multiarch-image.yml`) | No | `arc-runner-fricker-amd64` |
+| `download_artifacts` / `artifact_name` / `artifact_path` | Download a build artifact into the workspace before building | No | `false` / `''` / `.` |
+| `sentry_dsn_var_name` | Build-arg name to inject the `sentry_dsn` secret as | No | `''` |
 
 ### Architecture-Specific Inputs (Multiarch Workflow Only)
 
@@ -91,8 +110,10 @@ All workflows provide the following outputs:
 
 | Output | Description |
 |--------|-------------|
-| `image_tag` | Full image tag that was built |
-| `digest` | Image digest |
+| `image_name` | Image name without tag, registry included |
+| `image_tag` | Short tag: the first custom tag (multiarch) or `<sha>-<arch>` (single-arch) |
+| `image_fullname` | `image_name:image_tag` |
+| `digest` | The multi-arch index digest (multiarch, when pushed) or the image digest (single-arch) |
 
 ## Usage Examples
 
@@ -324,9 +345,9 @@ jobs:
 ## Features
 
 - ✅ **Multi-architecture support**: Build for ARM64, AMD64, or both
-- ✅ **Native architecture builds**: Uses self-hosted runners (no QEMU emulation overhead)
+- ✅ **Native architecture builds**: one ARC scale set per architecture (no QEMU emulation overhead)
 - ✅ **Parallel builds**: ARM and AMD builds run simultaneously for faster execution
-- ✅ **Caching**: Automatic GitHub Actions cache for faster builds
+- ✅ **Caching**: `type=registry` build cache per architecture on the lab registry
 - ✅ **Flexible tagging**: Support for multiple tags per build
 - ✅ **Build arguments**: Pass custom build arguments to Docker
 - ✅ **Registry agnostic**: Works with any Docker registry
@@ -337,20 +358,16 @@ jobs:
 
 To use these workflows, you need:
 
-1. **Self-hosted runners** with the following labels:
-   - `ARM64` label for ARM64 builds
-   - `X64` label for AMD64 builds
-   - Docker installed and properly configured on all runners
+1. **ARC scale sets** named `arc-runner-fricker-arm64` and `arc-runner-fricker-amd64` (or your own, via the `arm_runner` / `amd_runner` inputs), each with docker-in-docker
 2. A valid `Dockerfile` in your repository
 3. Docker registry credentials configured as GitHub secrets (if pushing images)
 4. Appropriate permissions for the GitHub token (if using GHCR)
 
 ## Troubleshooting
 
-### Build fails with "No runner matching the specified labels"
-- Ensure you have self-hosted runners configured with `ARM64` and `X64` labels
-- Verify the runners are online and available
-- Check that Docker is installed on the runners
+### The job sits at "Waiting for a runner to pick up this job"
+- The scale set named by `arm_runner` / `amd_runner` is not registered: `gh api orgs/fricker-studios/actions/runners -q '.runners[].name'` lists what is online
+- In the ci cluster: `kubectl --context ci -n arc-systems get pods` (one listener per scale set) and `kubectl --context ci -n arc-runners get pods -o wide`
 
 ### Build fails with "unauthorized" error
 - Verify your registry credentials are correct
